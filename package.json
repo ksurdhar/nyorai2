@@ -10,6 +10,7 @@
     "link": "npm run build && chmod +x dist/index.js && ln -sf $(pwd)/dist/index.js /usr/local/bin/nyorai2",
     "clean": "rm -rf dist"
   },
+  "type": "module",
   "keywords": [],
   "author": "",
   "license": "ISC",

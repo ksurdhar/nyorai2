@@ -2,7 +2,7 @@
 import { Command } from 'commander';
 import { Pinecone } from '@pinecone-database/pinecone';
 import dotenv from 'dotenv';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import * as path from 'path';
 import OpenAI from 'openai';
 import { fileURLToPath } from 'url';
@@ -29,6 +29,17 @@ program
     .parse(process.argv);
 const options = program.opts();
 const directory = options.dir || process.cwd();
+function findProjectRoot(dir) {
+    let currentDir = dir;
+    while (currentDir !== path.parse(currentDir).root) {
+        const parentDir = path.basename(currentDir);
+        if (parentDir.toLowerCase() === 'projects') {
+            return path.basename(path.dirname(currentDir));
+        }
+        currentDir = path.dirname(currentDir);
+    }
+    throw new Error('No directory named "project" found in the path hierarchy.');
+}
 async function initializePineconeIndex(indexName) {
     try {
         const { indexes: existingIndexes } = await pc.listIndexes();
@@ -37,7 +48,7 @@ async function initializePineconeIndex(indexName) {
             await pc.createIndex({
                 name: indexName,
                 dimension: 1536, // Dimension of OpenAI embeddings
-                spec: { serverless: { cloud: 'aws', region: 'us-west-2' } },
+                spec: { serverless: { cloud: 'aws', region: 'us-east-1' } },
             });
         }
     }
@@ -84,7 +95,9 @@ async function indexFiles(files, indexName) {
 }
 async function main() {
     try {
-        const indexName = path.basename(directory);
+        const rootDirName = findProjectRoot(directory);
+        const lastDirName = path.basename(directory);
+        const indexName = `${rootDirName}-${lastDirName}`;
         await initializePineconeIndex(indexName);
         const files = await readFilesRecursively(directory);
         await indexFiles(files, indexName);
