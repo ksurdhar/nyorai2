@@ -1,0 +1,25 @@
+{
+  "name": "nyorai2",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/commander": "^2.12.2",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^22.4.0"
+  },
+  "dependencies": {
+    "@pinecone-database/pinecone": "^3.0.0",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "fs-extra": "^11.2.0",
+    "openai": "^4.56.0",
+    "path": "^0.12.7"
+  }
+}
