@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { Pinecone } from '@pinecone-database/pinecone';
 import dotenv from 'dotenv';
 import fs from 'fs-extra';
 import * as path from 'path';
+import { Pinecone } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
@@ -26,9 +26,11 @@ const openai = new OpenAI({
 const program = new Command();
 program
     .option('-d, --dir <directory>', 'Directory to index')
+    .option('-q, --query <string>', 'Query for retrieval-augmented generation')
     .parse(process.argv);
 const options = program.opts();
 const directory = options.dir || process.cwd();
+const query = options.query || '';
 function findProjectRoot(dir) {
     let currentDir = dir;
     while (currentDir !== path.parse(currentDir).root) {
@@ -77,7 +79,6 @@ async function indexFiles(files, indexName) {
     for (const file of files) {
         try {
             const content = await fs.readFile(file, 'utf8');
-            // consider adding the filename to the content
             const embedding = await openai.embeddings.create({
                 model: 'text-embedding-3-small',
                 input: content,
@@ -95,14 +96,54 @@ async function indexFiles(files, indexName) {
         }
     }
 }
+async function performRAG(query, indexName) {
+    try {
+        const queryEmbedding = await openai.embeddings.create({
+            model: 'text-embedding-3-small',
+            input: query,
+        });
+        const queryVector = queryEmbedding.data[0].embedding;
+        const index = pc.index(indexName);
+        const searchResults = await index.query({
+            vector: queryVector,
+            topK: 5, // Number of relevant contexts to retrieve
+        });
+        const relevantContexts = searchResults.matches
+            .map((match) => match.metadata?.text)
+            .filter(Boolean); // Filter out any undefined or null values
+        // 3. Generate a natural language answer using OpenAI Chat Completion
+        const completion = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+                {
+                    role: 'system',
+                    content: 'You are a helpful assistant knowledgable about codebases.',
+                },
+                {
+                    role: 'user',
+                    content: `Here are some relevant contexts: ${relevantContexts.join('\n')}\n\nAnswer the following question: ${query}`,
+                },
+            ],
+        });
+        console.log('Answer:', completion.choices[0]);
+    }
+    catch (error) {
+        console.error('Error during RAG process:', error);
+    }
+}
 async function main() {
     try {
         const [parentDir, currentDir] = findProjectRoot(directory);
         const indexName = `${parentDir}-${currentDir}`;
         await initializePineconeIndex(indexName);
-        const files = await readFilesRecursively(directory);
-        await indexFiles(files, indexName);
-        console.log(`Successfully indexed ${files.length} files in Pinecone under index '${indexName}'`);
+        if (query) {
+            await performRAG(query, indexName);
+        }
+        else {
+            const files = await readFilesRecursively(directory);
+            await indexFiles(files, indexName);
+            console.log(`Successfully indexed ${files.length} files in Pinecone under index '${indexName}'`);
+        }
     }
     catch (error) {
         console.error('An error occurred:', error);
