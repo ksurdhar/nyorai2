@@ -32,13 +32,14 @@ const directory = options.dir || process.cwd();
 function findProjectRoot(dir) {
     let currentDir = dir;
     while (currentDir !== path.parse(currentDir).root) {
-        const parentDir = path.basename(currentDir);
+        const parentDir = path.basename(path.dirname(currentDir));
         if (parentDir.toLowerCase() === 'projects') {
-            return path.basename(path.dirname(currentDir));
+            const immediateDir = path.basename(currentDir);
+            return [immediateDir, path.basename(dir)];
         }
         currentDir = path.dirname(currentDir);
     }
-    throw new Error('No directory named "project" found in the path hierarchy.');
+    throw new Error('No directory named "projects" found in the path hierarchy.');
 }
 async function initializePineconeIndex(indexName) {
     try {
@@ -76,6 +77,7 @@ async function indexFiles(files, indexName) {
     for (const file of files) {
         try {
             const content = await fs.readFile(file, 'utf8');
+            // consider adding the filename to the content
             const embedding = await openai.embeddings.create({
                 model: 'text-embedding-3-small',
                 input: content,
@@ -95,9 +97,8 @@ async function indexFiles(files, indexName) {
 }
 async function main() {
     try {
-        const rootDirName = findProjectRoot(directory);
-        const lastDirName = path.basename(directory);
-        const indexName = `${rootDirName}-${lastDirName}`;
+        const [parentDir, currentDir] = findProjectRoot(directory);
+        const indexName = `${parentDir}-${currentDir}`;
         await initializePineconeIndex(indexName);
         const files = await readFilesRecursively(directory);
         await indexFiles(files, indexName);
