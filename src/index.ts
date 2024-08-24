@@ -8,6 +8,7 @@ import * as readline from 'readline'
 import { Pinecone } from '@pinecone-database/pinecone'
 import OpenAI from 'openai'
 import { fileURLToPath } from 'url'
+import { median, mean } from 'mathjs'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -33,11 +34,13 @@ const program = new Command()
 program
   .option('-d, --dir <directory>', 'Directory to index')
   .option('-q, --query', 'Activate query prompt mode')
+  .option('--debug', 'Enable debug mode') // Add debug option
   .parse(process.argv)
 
 const options = program.opts()
 const directory = options.dir || process.cwd()
 const queryMode = options.query || false
+const debugMode = options.debug || false
 
 function findProjectRoot(dir: string): string[] {
   let currentDir = dir
@@ -137,13 +140,44 @@ async function performRAG(
     const index = pc.index(indexName)
     const searchResults = await index.query({
       vector: queryVector,
-      topK: 5,
+      topK: 20,
       includeMetadata: true,
     })
 
-    const relevantContexts = searchResults.matches
+    //Calculate mean and median of the scores
+    const scores = searchResults.matches
+      .map((match) => match.score)
+      .filter((score): score is number => score !== undefined)
+
+    const meanScore = mean(scores)
+    const medianScore = median(scores)
+
+    // Determine the contexts to send
+    const minContexts = 5 // Minimum number of contexts to send
+    const maxContexts = 10 // Maximum number of contexts to send
+
+    // Filter contexts based on their proximity to the mean or median score
+    const relevantMatches = searchResults.matches
+      .filter(
+        (match) =>
+          match.score !== undefined &&
+          (match.score >= medianScore || match.score >= meanScore)
+      )
+      .slice(0, maxContexts)
+
+    const relevantContexts = relevantMatches
       .map((match) => match.metadata?.text)
       .filter(Boolean)
+
+    // Ensure at least `minContexts` are selected
+    while (
+      relevantContexts.length < minContexts &&
+      searchResults.matches.length > relevantContexts.length
+    ) {
+      relevantContexts.push(
+        searchResults.matches[relevantContexts.length].metadata?.text
+      )
+    }
 
     chatHistory.push({
       role: 'user',
@@ -171,12 +205,20 @@ async function performRAG(
       response += content
     }
 
-    console.log('\n') // Newline after the response is complete
+    console.log('\n')
 
     chatHistory.push({
       role: 'assistant',
       content: response.trim(),
     })
+
+    if (debugMode) {
+      const filesConsidered = relevantMatches
+        .map((match) => match.metadata?.path)
+        .filter(Boolean)
+      console.log('\nFiles considered when answering the question:')
+      filesConsidered.forEach((file) => console.log(file))
+    }
   } catch (error) {
     console.error('Error during RAG process:', error)
   }
@@ -203,11 +245,11 @@ async function promptLoop(indexName: string) {
       }
 
       await performRAG(query, indexName, chatHistory)
-      askQuestion() // Continue the loop
+      askQuestion()
     })
   }
 
-  askQuestion() // Start the loop
+  askQuestion()
 }
 
 async function main() {
