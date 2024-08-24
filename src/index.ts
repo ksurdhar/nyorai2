@@ -157,25 +157,26 @@ async function performRAG(
       )}\n\nAnswer the following question: ${query}`,
     })
 
-    const completion = await openai.chat.completions.create({
+    const stream = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: chatHistory,
+      stream: true,
     })
 
-    const response =
-      completion.choices[0]?.message?.content?.trim() ??
-      'No response generated.'
+    let response = ''
 
-    if (response === 'No response generated.') {
-      console.warn('Warning: The response content was null or undefined.')
-    } else {
-      chatHistory.push({
-        role: 'assistant',
-        content: response,
-      })
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || ''
+      process.stdout.write(content)
+      response += content
     }
 
-    console.log('Answer:', response)
+    console.log('\n') // Newline after the response is complete
+
+    chatHistory.push({
+      role: 'assistant',
+      content: response.trim(),
+    })
   } catch (error) {
     console.error('Error during RAG process:', error)
   }
