@@ -10,19 +10,15 @@ import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-
-// Explicitly specify the path to the .env file
 dotenv.config({ path: path.resolve(__dirname, '../.env') })
 
 const pineconeApiKey = process.env.PINECONE_API_KEY
 const openaiApiKey = process.env.OPENAI_API_KEY
 
-// Ensure the API keys are being loaded
 if (!pineconeApiKey || !openaiApiKey) {
   throw new Error('API keys are missing! Check your .env file.')
 }
 
-// Initialize Pinecone and OpenAI
 const pc = new Pinecone({
   apiKey: pineconeApiKey as string,
 })
@@ -99,15 +95,21 @@ async function indexFiles(files: string[], indexName: string) {
   for (const file of files) {
     try {
       const content = await fs.readFile(file, 'utf8')
+      const contentWithFilePath = `File path: ${file}\n\n${content}`
+
       const embedding = await openai.embeddings.create({
         model: 'text-embedding-3-small',
-        input: content,
+        input: contentWithFilePath,
       })
 
       await index.upsert([
         {
           id: file,
           values: embedding.data[0].embedding,
+          metadata: {
+            path: file,
+            text: contentWithFilePath,
+          },
         },
       ])
 
@@ -131,13 +133,16 @@ async function performRAG(query: string, indexName: string) {
     const searchResults = await index.query({
       vector: queryVector,
       topK: 5, // Number of relevant contexts to retrieve
+      includeMetadata: true,
     })
+
+    searchResults.matches.forEach((result) => console.log(result))
+    console.log(searchResults.matches[0])
 
     const relevantContexts = searchResults.matches
       .map((match) => match.metadata?.text)
-      .filter(Boolean) // Filter out any undefined or null values
+      .filter(Boolean)
 
-    // 3. Generate a natural language answer using OpenAI Chat Completion
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
@@ -154,7 +159,7 @@ async function performRAG(query: string, indexName: string) {
       ],
     })
 
-    console.log('Answer:', completion.choices[0])
+    console.log('Answer:', completion.choices[0].message.content)
   } catch (error) {
     console.error('Error during RAG process:', error)
   }

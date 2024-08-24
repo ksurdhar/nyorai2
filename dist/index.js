@@ -79,14 +79,19 @@ async function indexFiles(files, indexName) {
     for (const file of files) {
         try {
             const content = await fs.readFile(file, 'utf8');
+            const contentWithFilePath = `File path: ${file}\n\n${content}`;
             const embedding = await openai.embeddings.create({
                 model: 'text-embedding-3-small',
-                input: content,
+                input: contentWithFilePath,
             });
             await index.upsert([
                 {
                     id: file,
                     values: embedding.data[0].embedding,
+                    metadata: {
+                        path: file,
+                        text: content,
+                    },
                 },
             ]);
             console.log(`Indexed file: ${file}`);
@@ -107,11 +112,14 @@ async function performRAG(query, indexName) {
         const searchResults = await index.query({
             vector: queryVector,
             topK: 5, // Number of relevant contexts to retrieve
+            includeMetadata: true,
         });
+        searchResults.matches.forEach((result) => console.log(result));
+        console.log(searchResults.matches[0]);
         const relevantContexts = searchResults.matches
             .map((match) => match.metadata?.text)
             .filter(Boolean); // Filter out any undefined or null values
-        // 3. Generate a natural language answer using OpenAI Chat Completion
+        console.log('relevantContexts:', relevantContexts);
         const completion = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
             messages: [
@@ -125,7 +133,7 @@ async function performRAG(query, indexName) {
                 },
             ],
         });
-        console.log('Answer:', completion.choices[0]);
+        console.log('Answer:', completion.choices[0].message.content);
     }
     catch (error) {
         console.error('Error during RAG process:', error);
