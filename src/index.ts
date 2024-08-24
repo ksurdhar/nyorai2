@@ -4,6 +4,7 @@ import { Command } from 'commander'
 import dotenv from 'dotenv'
 import fs from 'fs-extra'
 import * as path from 'path'
+import * as readline from 'readline'
 import { Pinecone } from '@pinecone-database/pinecone'
 import OpenAI from 'openai'
 import { fileURLToPath } from 'url'
@@ -31,12 +32,12 @@ const program = new Command()
 
 program
   .option('-d, --dir <directory>', 'Directory to index')
-  .option('-q, --query <string>', 'Query for retrieval-augmented generation')
+  .option('-q, --query', 'Activate query prompt mode')
   .parse(process.argv)
 
 const options = program.opts()
 const directory = options.dir || process.cwd()
-const query = options.query || ''
+const queryMode = options.query || false
 
 function findProjectRoot(dir: string): string[] {
   let currentDir = dir
@@ -63,7 +64,7 @@ async function initializePineconeIndex(indexName: string) {
     if (!indexNames || !indexNames.includes(indexName)) {
       await pc.createIndex({
         name: indexName,
-        dimension: 1536, // Dimension of OpenAI embeddings
+        dimension: 1536,
         spec: { serverless: { cloud: 'aws', region: 'us-east-1' } },
       })
     }
@@ -120,7 +121,11 @@ async function indexFiles(files: string[], indexName: string) {
   }
 }
 
-async function performRAG(query: string, indexName: string) {
+async function performRAG(
+  query: string,
+  indexName: string,
+  chatHistory: any[]
+) {
   try {
     const queryEmbedding = await openai.embeddings.create({
       model: 'text-embedding-3-small',
@@ -132,37 +137,76 @@ async function performRAG(query: string, indexName: string) {
     const index = pc.index(indexName)
     const searchResults = await index.query({
       vector: queryVector,
-      topK: 5, // Number of relevant contexts to retrieve
+      topK: 5,
       includeMetadata: true,
     })
-
-    searchResults.matches.forEach((result) => console.log(result))
-    console.log(searchResults.matches[0])
 
     const relevantContexts = searchResults.matches
       .map((match) => match.metadata?.text)
       .filter(Boolean)
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a helpful assistant knowledgable about codebases.',
-        },
-        {
-          role: 'user',
-          content: `Here are some relevant contexts: ${relevantContexts.join(
-            '\n'
-          )}\n\nAnswer the following question: ${query}`,
-        },
-      ],
+    chatHistory.push({
+      role: 'user',
+      content: query,
     })
 
-    console.log('Answer:', completion.choices[0].message.content)
+    chatHistory.push({
+      role: 'assistant',
+      content: `Here are some relevant contexts: ${relevantContexts.join(
+        '\n'
+      )}\n\nAnswer the following question: ${query}`,
+    })
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: chatHistory,
+    })
+
+    const response =
+      completion.choices[0]?.message?.content?.trim() ??
+      'No response generated.'
+
+    if (response === 'No response generated.') {
+      console.warn('Warning: The response content was null or undefined.')
+    } else {
+      chatHistory.push({
+        role: 'assistant',
+        content: response,
+      })
+    }
+
+    console.log('Answer:', response)
   } catch (error) {
     console.error('Error during RAG process:', error)
   }
+}
+
+async function promptLoop(indexName: string) {
+  const chatHistory = [
+    {
+      role: 'system',
+      content: 'You are a helpful assistant knowledgeable about codebases.',
+    },
+  ]
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  })
+
+  const askQuestion = () => {
+    rl.question('Ask a question or type "exit" to quit: ', async (query) => {
+      if (query.toLowerCase() === 'exit') {
+        rl.close()
+        return
+      }
+
+      await performRAG(query, indexName, chatHistory)
+      askQuestion() // Continue the loop
+    })
+  }
+
+  askQuestion() // Start the loop
 }
 
 async function main() {
@@ -171,8 +215,8 @@ async function main() {
     const indexName = `${parentDir}-${currentDir}`
     await initializePineconeIndex(indexName)
 
-    if (query) {
-      await performRAG(query, indexName)
+    if (queryMode) {
+      await promptLoop(indexName)
     } else {
       const files = await readFilesRecursively(directory)
       await indexFiles(files, indexName)

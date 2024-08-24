@@ -3,20 +3,18 @@ import { Command } from 'commander';
 import dotenv from 'dotenv';
 import fs from 'fs-extra';
 import * as path from 'path';
+import * as readline from 'readline';
 import { Pinecone } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// Explicitly specify the path to the .env file
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 const pineconeApiKey = process.env.PINECONE_API_KEY;
 const openaiApiKey = process.env.OPENAI_API_KEY;
-// Ensure the API keys are being loaded
 if (!pineconeApiKey || !openaiApiKey) {
     throw new Error('API keys are missing! Check your .env file.');
 }
-// Initialize Pinecone and OpenAI
 const pc = new Pinecone({
     apiKey: pineconeApiKey,
 });
@@ -26,11 +24,11 @@ const openai = new OpenAI({
 const program = new Command();
 program
     .option('-d, --dir <directory>', 'Directory to index')
-    .option('-q, --query <string>', 'Query for retrieval-augmented generation')
+    .option('-q, --query', 'Activate query prompt mode')
     .parse(process.argv);
 const options = program.opts();
 const directory = options.dir || process.cwd();
-const query = options.query || '';
+const queryMode = options.query || false;
 function findProjectRoot(dir) {
     let currentDir = dir;
     while (currentDir !== path.parse(currentDir).root) {
@@ -50,7 +48,7 @@ async function initializePineconeIndex(indexName) {
         if (!indexNames || !indexNames.includes(indexName)) {
             await pc.createIndex({
                 name: indexName,
-                dimension: 1536, // Dimension of OpenAI embeddings
+                dimension: 1536,
                 spec: { serverless: { cloud: 'aws', region: 'us-east-1' } },
             });
         }
@@ -90,7 +88,7 @@ async function indexFiles(files, indexName) {
                     values: embedding.data[0].embedding,
                     metadata: {
                         path: file,
-                        text: content,
+                        text: contentWithFilePath,
                     },
                 },
             ]);
@@ -101,7 +99,7 @@ async function indexFiles(files, indexName) {
         }
     }
 }
-async function performRAG(query, indexName) {
+async function performRAG(query, indexName, chatHistory) {
     try {
         const queryEmbedding = await openai.embeddings.create({
             model: 'text-embedding-3-small',
@@ -111,41 +109,71 @@ async function performRAG(query, indexName) {
         const index = pc.index(indexName);
         const searchResults = await index.query({
             vector: queryVector,
-            topK: 5, // Number of relevant contexts to retrieve
+            topK: 5,
             includeMetadata: true,
         });
-        searchResults.matches.forEach((result) => console.log(result));
-        console.log(searchResults.matches[0]);
         const relevantContexts = searchResults.matches
             .map((match) => match.metadata?.text)
-            .filter(Boolean); // Filter out any undefined or null values
-        console.log('relevantContexts:', relevantContexts);
+            .filter(Boolean);
+        chatHistory.push({
+            role: 'user',
+            content: query,
+        });
+        chatHistory.push({
+            role: 'assistant',
+            content: `Here are some relevant contexts: ${relevantContexts.join('\n')}\n\nAnswer the following question: ${query}`,
+        });
         const completion = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
-            messages: [
-                {
-                    role: 'system',
-                    content: 'You are a helpful assistant knowledgable about codebases.',
-                },
-                {
-                    role: 'user',
-                    content: `Here are some relevant contexts: ${relevantContexts.join('\n')}\n\nAnswer the following question: ${query}`,
-                },
-            ],
+            messages: chatHistory,
         });
-        console.log('Answer:', completion.choices[0].message.content);
+        const response = completion.choices[0]?.message?.content?.trim() ??
+            'No response generated.';
+        if (response === 'No response generated.') {
+            console.warn('Warning: The response content was null or undefined.');
+        }
+        else {
+            chatHistory.push({
+                role: 'assistant',
+                content: response,
+            });
+        }
+        console.log('Answer:', response);
     }
     catch (error) {
         console.error('Error during RAG process:', error);
     }
+}
+async function promptLoop(indexName) {
+    const chatHistory = [
+        {
+            role: 'system',
+            content: 'You are a helpful assistant knowledgeable about codebases.',
+        },
+    ];
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+    });
+    const askQuestion = () => {
+        rl.question('Ask a question or type "exit" to quit: ', async (query) => {
+            if (query.toLowerCase() === 'exit') {
+                rl.close();
+                return;
+            }
+            await performRAG(query, indexName, chatHistory);
+            askQuestion(); // Continue the loop
+        });
+    };
+    askQuestion(); // Start the loop
 }
 async function main() {
     try {
         const [parentDir, currentDir] = findProjectRoot(directory);
         const indexName = `${parentDir}-${currentDir}`;
         await initializePineconeIndex(indexName);
-        if (query) {
-            await performRAG(query, indexName);
+        if (queryMode) {
+            await promptLoop(indexName);
         }
         else {
             const files = await readFilesRecursively(directory);
