@@ -6,7 +6,9 @@ import { Pinecone } from '@pinecone-database/pinecone' // Import Pinecone
 import OpenAI from 'openai'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
-import { performRAG } from '../dist/query.js'
+import { performRAGStream } from '../dist/query.js'
+import { v4 as uuidv4 } from 'uuid' // Import UUID library for generating unique stream IDs
+const streams = new Map() // Store ongoing streams
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -46,19 +48,47 @@ app.get('/api/indexes', async (req, res) => {
 })
 
 // Example route to handle queries
-app.post('/api/query', async (req, res) => {
-  const { query, indexName } = req.body
-  try {
-    // Call the performRAG function to handle the question
-    const chatHistory = [
-      {
-        role: 'system',
-        content: 'You are a helpful assistant knowledgeable about codebases.',
-      },
-    ]
-    const previousResults = new Set()
 
-    const response = await performRAG(
+app.post('/api/query', (req, res) => {
+  const { query, indexName } = req.body
+  const streamId = uuidv4() // Generate a unique stream ID
+
+  const chatHistory = [
+    {
+      role: 'system',
+      content: 'You are a helpful assistant knowledgeable about codebases.',
+    },
+  ]
+  const previousResults = new Set()
+
+  // Store the stream state by streamId
+  streams.set(streamId, {
+    query,
+    indexName,
+    chatHistory,
+    previousResults,
+  })
+
+  // Respond with the stream ID
+  res.json({ streamId })
+})
+
+app.get('/api/query/stream/:streamId', async (req, res) => {
+  const { streamId } = req.params
+  const streamState = streams.get(streamId)
+
+  if (!streamState) {
+    return res.status(404).json({ error: 'Stream not found' })
+  }
+
+  const { query, indexName, chatHistory, previousResults } = streamState
+
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+
+  try {
+    const stream = await performRAGStream(
       query,
       indexName,
       chatHistory,
@@ -66,14 +96,33 @@ app.post('/api/query', async (req, res) => {
       {
         indexer: pc,
         embedder: openai,
-        debugMode: false, // Set to true if you want debug information
       }
     )
 
-    res.json({ result: response })
+    for await (const chunk of stream) {
+      try {
+        // Ensure the chunk is a string or convert it to a JSON string
+        const chunkData =
+          typeof chunk === 'string' ? chunk : JSON.stringify(chunk)
+        res.write(`data: ${chunkData}\n\n`)
+      } catch (error) {
+        console.error('Error writing chunk:', error)
+        break // Stop processing further if writing fails
+      }
+    }
+
+    res.write('data: [DONE]\n\n') // Optional: Mark the end of the stream
+    res.end()
+    streams.delete(streamId) // Clean up the stream state
   } catch (error) {
-    console.error('Error processing query:', error)
-    res.status(500).json({ error: 'Failed to process the query' })
+    console.error('Error streaming data:', error)
+
+    // Ensure you do not send another response after streaming has started
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to stream data' })
+    }
+
+    streams.delete(streamId) // Clean up on error
   }
 })
 

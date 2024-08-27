@@ -34,19 +34,56 @@ function App() {
   const handleQuerySubmit = async () => {
     if (!query || !selectedIndex) return
 
-    const response = await fetch('http://localhost:5001/api/query', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query,
-        indexName: selectedIndex,
-      }),
-    })
+    try {
+      // Send the initial POST request with fetch
+      const response = await fetch('http://localhost:5001/api/query', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query,
+          indexName: selectedIndex,
+        }),
+      })
 
-    const data = await response.json()
-    setResponse(data.result || 'No response received')
+      if (!response.ok) {
+        throw new Error('Failed to initiate query')
+      }
+
+      // Assuming the server responds with a stream ID or some identifier
+      const { streamId } = await response.json()
+
+      // Use EventSource to listen to the streaming events
+      const eventSource = new EventSource(
+        `http://localhost:5001/api/query/stream/${streamId}`
+      )
+
+      eventSource.onmessage = (event) => {
+        try {
+          // Parse the JSON string into an object
+          const data = JSON.parse(event.data)
+
+          // Access the specific content you want (e.g., the `content` from `delta`)
+          const content = data.choices[0]?.delta?.content || ''
+
+          // Append the content to the response or handle it as needed
+          setResponse((prev) => prev + content)
+        } catch (error) {
+          console.error('Error parsing JSON:', error)
+        }
+      }
+
+      eventSource.onerror = (error) => {
+        console.error('Error fetching data:', error)
+        eventSource.close()
+      }
+
+      // Close the connection when you don’t need it anymore or once the response is done
+      // You may need to implement additional logic to know when to close (based on EOF)
+    } catch (error) {
+      console.error('Error during query submission:', error)
+    }
   }
 
   return (
