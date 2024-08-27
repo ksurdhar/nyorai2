@@ -1,5 +1,4 @@
 import { Pinecone } from '@pinecone-database/pinecone'
-import { mean, median } from 'mathjs'
 import OpenAI from 'openai'
 
 async function performRAG(
@@ -24,52 +23,35 @@ async function performRAG(
     const index = pc.index(indexName)
     const searchResults = await index.query({
       vector: queryVector,
-      topK: 20,
+      topK: 10, // Fetch the top 10 results
       includeMetadata: true,
     })
 
-    const scores = searchResults.matches
-      .map((match) => match.score)
-      .filter((score): score is number => score !== undefined)
+    // Filter out results that were previously used
+    const relevantMatches = searchResults.matches.filter(
+      (match) => !previousResults.has(match.metadata?.path as string)
+    )
 
-    const meanScore = mean(scores)
-    const medianScore = median(scores)
+    // If there are no new relevant matches, use all top 10 results regardless of previous use
+    const matchesToUse =
+      relevantMatches.length > 0 ? relevantMatches : searchResults.matches
 
-    const minContexts = 5
-    const maxContexts = 10
-
-    const relevantMatches = searchResults.matches
-      .filter(
-        (match) =>
-          match.score !== undefined &&
-          (match.score >= medianScore || match.score >= meanScore) &&
-          !previousResults.has(match.metadata?.path as string)
-      )
-      .slice(0, maxContexts)
-
-    const relevantContexts = relevantMatches
+    const relevantContexts = matchesToUse
       .map((match) => match.metadata?.text)
       .filter(Boolean)
 
-    while (
-      relevantContexts.length < minContexts &&
-      searchResults.matches.length > relevantContexts.length
-    ) {
-      const match = searchResults.matches[relevantContexts.length]
-      if (!previousResults.has(match.metadata?.path as string)) {
-        relevantContexts.push(match.metadata?.text)
-      }
-    }
-
-    relevantMatches.forEach((match) => {
+    // Add the paths of the matches to the previousResults set to avoid duplication in future queries
+    matchesToUse.forEach((match) => {
       previousResults.add(match.metadata?.path as string)
     })
 
+    // Add the user query to the chat history
     chatHistory.push({
       role: 'user',
       content: query,
     })
 
+    // Add the relevant contexts to the chat history
     chatHistory.push({
       role: 'assistant',
       content: `Here are some relevant contexts: ${relevantContexts.join(
@@ -77,6 +59,7 @@ async function performRAG(
       )}\n\nAnswer the following question: ${query}`,
     })
 
+    // Create a stream for the chat completion
     const stream = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: chatHistory,
@@ -85,6 +68,7 @@ async function performRAG(
 
     let response = ''
 
+    // Process the streaming response
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content || ''
       process.stdout.write(content)
@@ -93,11 +77,13 @@ async function performRAG(
 
     console.log('\n')
 
+    // Add the assistant's response to the chat history
     chatHistory.push({
       role: 'assistant',
       content: response.trim(),
     })
 
+    // Debug mode: log the files considered for the response
     if (debugMode) {
       const filesConsidered = Array.from(previousResults)
       console.log('\nFiles considered when answering the question:')

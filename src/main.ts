@@ -86,12 +86,18 @@ async function promptLoop(indexName: string) {
         return
       }
 
-      await performRAG(query, indexName, chatHistory, previousResults, {
-        indexer: pc,
-        embedder: openai,
-        debugMode,
-      })
-      askQuestion()
+      try {
+        await performRAG(query, indexName, chatHistory, previousResults, {
+          indexer: pc,
+          embedder: openai,
+          debugMode,
+        })
+      } catch (error) {
+        console.error('An error occurred during RAG:', error)
+      }
+
+      // Continue to ask the next question
+      process.nextTick(askQuestion)
     })
   }
 
