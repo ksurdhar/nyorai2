@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import ReactMarkdown from 'react-markdown'
 import './App.css'
+import { CodeBlock } from './codeHighlighter'
 
 function App() {
   const [indexes, setIndexes] = useState<string[]>([])
@@ -51,15 +51,7 @@ function App() {
 
   return (
     <>
-      <div>
-        <a href="https://vitejs.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
+      <h1>Nyorai2</h1>
 
       {loading ? (
         <p>Loading indexes...</p>
@@ -93,7 +85,26 @@ function App() {
           {response && (
             <div>
               <h2>Response:</h2>
-              <p>{response}</p>
+              <ReactMarkdown
+                components={{
+                  code({ className, children, style }) {
+                    const match = /language-(\w+)/.exec(className || '')
+
+                    return match ? (
+                      <CodeBlock
+                        language={match[1]}
+                        value={String(children).replace(/\n$/, '')}
+                      />
+                    ) : (
+                      <code className={className} style={style}>
+                        {children}
+                      </code>
+                    )
+                  },
+                }}
+              >
+                {response}
+              </ReactMarkdown>
             </div>
           )}
         </div>
