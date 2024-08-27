@@ -137,51 +137,71 @@ async function indexFiles(
   const cache = await loadCache()
   const index = pc.index(indexName)
   let successfulCount = 0
+  const batchSize = 50
 
-  for (const file of files) {
+  console.time('Indexing Time')
+
+  const fileBatches = []
+  for (let i = 0; i < files.length; i += batchSize) {
+    fileBatches.push(files.slice(i, i + batchSize))
+  }
+
+  for (const batch of fileBatches) {
     try {
-      const stats = await fs.stat(file)
-      const mdate = stats.mtimeMs
-      const cachedMdate = cache[file]
+      await Promise.all(
+        batch.map(async (file) => {
+          try {
+            const stats = await fs.stat(file)
+            const mdate = stats.mtimeMs
+            const cachedMdate = cache[file]
 
-      if (cachedMdate && mdate <= cachedMdate) {
-        console.log(`Skipping file: ${file} (not modified since last index)`)
-        continue
-      }
+            if (cachedMdate && mdate <= cachedMdate) {
+              console.log(
+                `Skipping file: ${file} (not modified since last index)`
+              )
+              return
+            }
 
-      const content = await fs.readFile(file, 'utf8')
-      const contentWithFilePath = `File path: ${file}\n\n${content}`
+            const content = await fs.readFile(file, 'utf8')
+            const contentWithFilePath = `File path: ${file}\n\n${content}`
 
-      if (dryrunMode) {
-        console.log(`[Dry Run] Indexed file: ${file}`)
-      } else {
-        const embedding = await openai.embeddings.create({
-          model: 'text-embedding-3-small',
-          input: contentWithFilePath,
+            if (dryrunMode) {
+              console.log(`[Dry Run] Indexed file: ${file}`)
+            } else {
+              const embedding = await openai.embeddings.create({
+                model: 'text-embedding-3-small',
+                input: contentWithFilePath,
+              })
+
+              await index.upsert([
+                {
+                  id: file,
+                  values: embedding.data[0].embedding,
+                  metadata: {
+                    path: file,
+                    mdate,
+                    text: contentWithFilePath,
+                  },
+                },
+              ])
+              console.log(`Indexed file: ${file}`)
+              cache[file] = mdate
+            }
+
+            successfulCount++
+          } catch (error) {
+            console.error(`Error indexing file ${file}:`, error)
+          }
         })
-
-        await index.upsert([
-          {
-            id: file,
-            values: embedding.data[0].embedding,
-            metadata: {
-              path: file,
-              mdate,
-              text: contentWithFilePath,
-            },
-          },
-        ])
-        console.log(`Indexed file: ${file}`)
-        cache[file] = mdate
-      }
-
-      successfulCount++
+      )
     } catch (error) {
-      console.error(`Error indexing file ${file}:`, error)
+      console.error('Error processing batch:', error)
     }
   }
 
   await saveCache(cache)
+
+  console.timeEnd('Indexing Time')
 
   console.log(
     `Successfully ${
