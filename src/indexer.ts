@@ -69,10 +69,7 @@ async function readFilesRecursively(dir: string): Promise<string[]> {
       entries.map(async (entry) => {
         const res = path.resolve(dir, entry.name)
 
-        if (
-          entry.isDirectory() &&
-          (ignoredDirs.has(entry.name) || entry.name.startsWith('.'))
-        ) {
+        if (entry.isDirectory() && ignoredDirs.has(entry.name)) {
           return []
         }
 
