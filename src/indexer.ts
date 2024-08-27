@@ -1,7 +1,36 @@
 import fs from 'fs-extra'
 import * as path from 'path'
+import { fileURLToPath } from 'url'
 import { Pinecone } from '@pinecone-database/pinecone'
 import OpenAI from 'openai'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const cacheFilePath = path.resolve(__dirname, 'index_cache.json')
+
+async function loadCache(): Promise<Record<string, number>> {
+  try {
+    const cacheExists = await fs.pathExists(cacheFilePath)
+    if (cacheExists) {
+      const cache = await fs.readJson(cacheFilePath)
+      return cache
+    } else {
+      return {}
+    }
+  } catch (error) {
+    console.error('Error loading cache:', error)
+    throw error
+  }
+}
+
+async function saveCache(cache: Record<string, number>) {
+  try {
+    await fs.writeJson(cacheFilePath, cache, { spaces: 2 })
+  } catch (error) {
+    console.error('Error saving cache:', error)
+    throw error
+  }
+}
 
 const ignoredDirs = new Set([
   'node_modules',
@@ -21,12 +50,11 @@ const allowedExtensions = new Set([
   '.js',
   '.jsx',
   '.md',
-  // '.json',
-  '.tf', // Terraform
-  '.tfvars', // Terraform variable files
-  '.hcl', // HashiCorp Configuration Language
-  '.pkr.hcl', // Packer configuration files
-  '.Dockerfile', // Dockerfile
+  '.tf',
+  '.tfvars',
+  '.hcl',
+  '.pkr.hcl',
+  '.Dockerfile',
   '.dockerignore',
   '.yml',
   '.yaml',
@@ -39,12 +67,10 @@ async function readFilesRecursively(dir: string): Promise<string[]> {
       entries.map(async (entry) => {
         const res = path.resolve(dir, entry.name)
 
-        // Skip ignored directories
         if (entry.isDirectory() && ignoredDirs.has(entry.name)) {
           return []
         }
 
-        // Filter by allowed file extensions
         if (
           !entry.isDirectory() &&
           !allowedExtensions.has(path.extname(entry.name))
@@ -103,11 +129,21 @@ async function indexFiles(
     dryrunMode,
   }: { indexer: Pinecone; embedder: OpenAI; dryrunMode: boolean }
 ) {
+  const cache = await loadCache()
   const index = pc.index(indexName)
   let successfulCount = 0
 
   for (const file of files) {
     try {
+      const stats = await fs.stat(file)
+      const mdate = stats.mtimeMs
+      const cachedMdate = cache[file]
+
+      if (cachedMdate && mdate <= cachedMdate) {
+        console.log(`Skipping file: ${file} (not modified since last index)`)
+        continue
+      }
+
       const content = await fs.readFile(file, 'utf8')
       const contentWithFilePath = `File path: ${file}\n\n${content}`
 
@@ -125,11 +161,13 @@ async function indexFiles(
             values: embedding.data[0].embedding,
             metadata: {
               path: file,
+              mdate,
               text: contentWithFilePath,
             },
           },
         ])
         console.log(`Indexed file: ${file}`)
+        cache[file] = mdate
       }
 
       successfulCount++
@@ -137,6 +175,8 @@ async function indexFiles(
       console.error(`Error indexing file ${file}:`, error)
     }
   }
+
+  await saveCache(cache)
 
   console.log(
     `Successfully ${

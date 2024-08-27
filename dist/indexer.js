@@ -1,5 +1,34 @@
 import fs from 'fs-extra';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const cacheFilePath = path.resolve(__dirname, 'index_cache.json');
+async function loadCache() {
+    try {
+        const cacheExists = await fs.pathExists(cacheFilePath);
+        if (cacheExists) {
+            const cache = await fs.readJson(cacheFilePath);
+            return cache;
+        }
+        else {
+            return {};
+        }
+    }
+    catch (error) {
+        console.error('Error loading cache:', error);
+        throw error;
+    }
+}
+async function saveCache(cache) {
+    try {
+        await fs.writeJson(cacheFilePath, cache, { spaces: 2 });
+    }
+    catch (error) {
+        console.error('Error saving cache:', error);
+        throw error;
+    }
+}
 const ignoredDirs = new Set([
     'node_modules',
     '.git',
@@ -17,12 +46,11 @@ const allowedExtensions = new Set([
     '.js',
     '.jsx',
     '.md',
-    // '.json',
-    '.tf', // Terraform
-    '.tfvars', // Terraform variable files
-    '.hcl', // HashiCorp Configuration Language
-    '.pkr.hcl', // Packer configuration files
-    '.Dockerfile', // Dockerfile
+    '.tf',
+    '.tfvars',
+    '.hcl',
+    '.pkr.hcl',
+    '.Dockerfile',
     '.dockerignore',
     '.yml',
     '.yaml',
@@ -32,11 +60,9 @@ async function readFilesRecursively(dir) {
         const entries = await fs.readdir(dir, { withFileTypes: true });
         const files = await Promise.all(entries.map(async (entry) => {
             const res = path.resolve(dir, entry.name);
-            // Skip ignored directories
             if (entry.isDirectory() && ignoredDirs.has(entry.name)) {
                 return [];
             }
-            // Filter by allowed file extensions
             if (!entry.isDirectory() &&
                 !allowedExtensions.has(path.extname(entry.name))) {
                 return [];
@@ -79,10 +105,18 @@ async function initializePineconeIndex(indexName, { indexer: pc }) {
     }
 }
 async function indexFiles(files, indexName, { indexer: pc, embedder: openai, dryrunMode, }) {
+    const cache = await loadCache();
     const index = pc.index(indexName);
     let successfulCount = 0;
     for (const file of files) {
         try {
+            const stats = await fs.stat(file);
+            const mdate = stats.mtimeMs;
+            const cachedMdate = cache[file];
+            if (cachedMdate && mdate <= cachedMdate) {
+                console.log(`Skipping file: ${file} (not modified since last index)`);
+                continue;
+            }
             const content = await fs.readFile(file, 'utf8');
             const contentWithFilePath = `File path: ${file}\n\n${content}`;
             if (dryrunMode) {
@@ -99,11 +133,13 @@ async function indexFiles(files, indexName, { indexer: pc, embedder: openai, dry
                         values: embedding.data[0].embedding,
                         metadata: {
                             path: file,
+                            mdate,
                             text: contentWithFilePath,
                         },
                     },
                 ]);
                 console.log(`Indexed file: ${file}`);
+                cache[file] = mdate;
             }
             successfulCount++;
         }
@@ -111,6 +147,7 @@ async function indexFiles(files, indexName, { indexer: pc, embedder: openai, dry
             console.error(`Error indexing file ${file}:`, error);
         }
     }
+    await saveCache(cache);
     console.log(`Successfully ${dryrunMode ? 'simulated indexing' : 'indexed'} ${successfulCount} out of ${files.length} files in Pinecone under index '${indexName}'${dryrunMode ? ' (dry run)' : ''}`);
 }
 export { initializePineconeIndex, readFilesRecursively, indexFiles };
