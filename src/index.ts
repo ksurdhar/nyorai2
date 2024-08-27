@@ -34,7 +34,7 @@ const program = new Command()
 program
   .option('-d, --dir <directory>', 'Directory to index')
   .option('-q, --query', 'Activate query prompt mode')
-  .option('--debug', 'Enable debug mode') // Add debug option
+  .option('--debug', 'Enable debug mode')
   .parse(process.argv)
 
 const options = program.opts()
@@ -42,15 +42,43 @@ const directory = options.dir || process.cwd()
 const queryMode = options.query || false
 const debugMode = options.debug || false
 
-function findProjectRoot(dir: string): string[] {
+const ignoredDirs = new Set([
+  'node_modules',
+  '.git',
+  '.vscode',
+  'dist',
+  'build',
+  'coverage',
+  'logs',
+  'tmp',
+  'temp',
+])
+
+const allowedExtensions = new Set([
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+  '.md',
+  // '.json',
+  '.tf', // Terraform
+  '.tfvars', // Terraform variable files
+  '.hcl', // HashiCorp Configuration Language
+  '.pkr.hcl', // Packer configuration files
+  '.Dockerfile', // Dockerfile
+  '.dockerignore',
+  '.yml',
+  '.yaml',
+])
+
+function findProjectRoot(dir: string): string {
   let currentDir = dir
 
   while (currentDir !== path.parse(currentDir).root) {
     const parentDir = path.basename(path.dirname(currentDir))
 
     if (parentDir.toLowerCase() === 'projects') {
-      const immediateDir = path.basename(currentDir)
-      return [immediateDir, path.basename(dir)]
+      return path.basename(currentDir) // Return only the project root (e.g., 'nyorai2')
     }
 
     currentDir = path.dirname(currentDir)
@@ -71,6 +99,17 @@ async function initializePineconeIndex(indexName: string) {
         spec: { serverless: { cloud: 'aws', region: 'us-east-1' } },
       })
     }
+
+    let isReady = false
+    while (!isReady) {
+      const indexDescription = await pc.describeIndex(indexName)
+      if (indexDescription.status.ready === true) {
+        isReady = true
+      } else {
+        console.log(`Waiting for Pinecone index '${indexName}' to be ready...`)
+        await new Promise((resolve) => setTimeout(resolve, 5000))
+      }
+    }
   } catch (error) {
     console.error('Error initializing Pinecone index:', error)
     throw error
@@ -83,6 +122,20 @@ async function readFilesRecursively(dir: string): Promise<string[]> {
     const files = await Promise.all(
       entries.map(async (entry) => {
         const res = path.resolve(dir, entry.name)
+
+        // Skip ignored directories
+        if (entry.isDirectory() && ignoredDirs.has(entry.name)) {
+          return []
+        }
+
+        // Filter by allowed file extensions
+        if (
+          !entry.isDirectory() &&
+          !allowedExtensions.has(path.extname(entry.name))
+        ) {
+          return []
+        }
+
         return entry.isDirectory() ? readFilesRecursively(res) : [res]
       })
     )
@@ -96,8 +149,12 @@ async function readFilesRecursively(dir: string): Promise<string[]> {
 async function indexFiles(files: string[], indexName: string) {
   const index = pc.index(indexName)
 
+  const namespaces = new Set()
   for (const file of files) {
     try {
+      const relativePath = path.relative(directory, file)
+      const topLevelDir = relativePath.split(path.sep)[0] || indexName
+
       const content = await fs.readFile(file, 'utf8')
       const contentWithFilePath = `File path: ${file}\n\n${content}`
 
@@ -106,7 +163,7 @@ async function indexFiles(files: string[], indexName: string) {
         input: contentWithFilePath,
       })
 
-      await index.upsert([
+      await index.namespace(topLevelDir).upsert([
         {
           id: file,
           values: embedding.data[0].embedding,
@@ -116,12 +173,13 @@ async function indexFiles(files: string[], indexName: string) {
           },
         },
       ])
-
-      console.log(`Indexed file: ${file}`)
+      namespaces.add(topLevelDir)
+      console.log(`Indexed file: ${file} under namespace: '${topLevelDir}'`)
     } catch (error) {
       console.error(`Error indexing file ${file}:`, error)
     }
   }
+  return namespaces
 }
 
 async function performRAG(
@@ -144,7 +202,6 @@ async function performRAG(
       includeMetadata: true,
     })
 
-    //Calculate mean and median of the scores
     const scores = searchResults.matches
       .map((match) => match.score)
       .filter((score): score is number => score !== undefined)
@@ -152,11 +209,9 @@ async function performRAG(
     const meanScore = mean(scores)
     const medianScore = median(scores)
 
-    // Determine the contexts to send
-    const minContexts = 5 // Minimum number of contexts to send
-    const maxContexts = 10 // Maximum number of contexts to send
+    const minContexts = 5
+    const maxContexts = 10
 
-    // Filter contexts based on their proximity to the mean or median score
     const relevantMatches = searchResults.matches
       .filter(
         (match) =>
@@ -169,7 +224,6 @@ async function performRAG(
       .map((match) => match.metadata?.text)
       .filter(Boolean)
 
-    // Ensure at least `minContexts` are selected
     while (
       relevantContexts.length < minContexts &&
       searchResults.matches.length > relevantContexts.length
@@ -254,17 +308,18 @@ async function promptLoop(indexName: string) {
 
 async function main() {
   try {
-    const [parentDir, currentDir] = findProjectRoot(directory)
-    const indexName = `${parentDir}-${currentDir}`
+    const projectRoot = findProjectRoot(directory)
+    const indexName = projectRoot
+
     await initializePineconeIndex(indexName)
 
     if (queryMode) {
       await promptLoop(indexName)
     } else {
       const files = await readFilesRecursively(directory)
-      await indexFiles(files, indexName)
+      const namespaces = await indexFiles(files, indexName)
       console.log(
-        `Successfully indexed ${files.length} files in Pinecone under index '${indexName}'`
+        `Successfully indexed ${files.length} files in Pinecone under index '${indexName}' and namespaces '${namespaces}'`
       )
     }
   } catch (error) {
