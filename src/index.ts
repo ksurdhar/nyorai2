@@ -149,12 +149,8 @@ async function readFilesRecursively(dir: string): Promise<string[]> {
 async function indexFiles(files: string[], indexName: string) {
   const index = pc.index(indexName)
 
-  const namespaces = new Set()
   for (const file of files) {
     try {
-      const relativePath = path.relative(directory, file)
-      const topLevelDir = relativePath.split(path.sep)[0] || indexName
-
       const content = await fs.readFile(file, 'utf8')
       const contentWithFilePath = `File path: ${file}\n\n${content}`
 
@@ -163,7 +159,7 @@ async function indexFiles(files: string[], indexName: string) {
         input: contentWithFilePath,
       })
 
-      await index.namespace(topLevelDir).upsert([
+      await index.upsert([
         {
           id: file,
           values: embedding.data[0].embedding,
@@ -173,13 +169,11 @@ async function indexFiles(files: string[], indexName: string) {
           },
         },
       ])
-      namespaces.add(topLevelDir)
-      console.log(`Indexed file: ${file} under namespace: '${topLevelDir}'`)
+      console.log(`Indexed file: ${file}`)
     } catch (error) {
       console.error(`Error indexing file ${file}:`, error)
     }
   }
-  return namespaces
 }
 
 async function performRAG(
@@ -317,9 +311,9 @@ async function main() {
       await promptLoop(indexName)
     } else {
       const files = await readFilesRecursively(directory)
-      const namespaces = await indexFiles(files, indexName)
+      await indexFiles(files, indexName)
       console.log(
-        `Successfully indexed ${files.length} files in Pinecone under index '${indexName}' and namespaces '${namespaces}'`
+        `Successfully indexed ${files.length} files in Pinecone under index '${indexName}'`
       )
     }
   } catch (error) {

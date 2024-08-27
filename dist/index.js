@@ -123,18 +123,15 @@ async function readFilesRecursively(dir) {
 }
 async function indexFiles(files, indexName) {
     const index = pc.index(indexName);
-    const namespaces = new Set();
     for (const file of files) {
         try {
-            const relativePath = path.relative(directory, file);
-            const topLevelDir = relativePath.split(path.sep)[0] || indexName;
             const content = await fs.readFile(file, 'utf8');
             const contentWithFilePath = `File path: ${file}\n\n${content}`;
             const embedding = await openai.embeddings.create({
                 model: 'text-embedding-3-small',
                 input: contentWithFilePath,
             });
-            await index.namespace(topLevelDir).upsert([
+            await index.upsert([
                 {
                     id: file,
                     values: embedding.data[0].embedding,
@@ -144,14 +141,12 @@ async function indexFiles(files, indexName) {
                     },
                 },
             ]);
-            namespaces.add(topLevelDir);
-            console.log(`Indexed file: ${file} under namespace: '${topLevelDir}'`);
+            console.log(`Indexed file: ${file}`);
         }
         catch (error) {
             console.error(`Error indexing file ${file}:`, error);
         }
     }
-    return namespaces;
 }
 async function performRAG(query, indexName, chatHistory) {
     try {
@@ -253,8 +248,8 @@ async function main() {
         }
         else {
             const files = await readFilesRecursively(directory);
-            const namespaces = await indexFiles(files, indexName);
-            console.log(`Successfully indexed ${files.length} files in Pinecone under index '${indexName}' and namespaces '${namespaces}'`);
+            await indexFiles(files, indexName);
+            console.log(`Successfully indexed ${files.length} files in Pinecone under index '${indexName}'`);
         }
     }
     catch (error) {
