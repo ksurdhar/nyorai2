@@ -8,7 +8,8 @@
     "start": "node dist/main.js",
     "setup": "npm install && npm run build",
     "link": "npm run build && chmod +x dist/main.js && ln -sf $(pwd)/dist/main.js /usr/local/bin/nyorai2",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "dev": "concurrently \"npm run dev --prefix frontend\" \"node backend/index.js\""
   },
   "type": "module",
   "keywords": [],
@@ -18,6 +19,7 @@
     "@types/commander": "^2.12.2",
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^22.4.0",
+    "concurrently": "^8.2.2",
     "typescript": "^5.1.6"
   },
   "dependencies": {
