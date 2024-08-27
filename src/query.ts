@@ -95,6 +95,7 @@ async function performRAG(
         )}`,
       })
     }
+    return response.trim() // maybe need to ensure that I'm only doing this in this mode
   } catch (error) {
     console.error('Error during RAG process:', error)
   }

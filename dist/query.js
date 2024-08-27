@@ -61,6 +61,7 @@ async function performRAG(query, indexName, chatHistory, previousResults, { inde
                 content: `Files considered when answering the question:\n${filesConsidered.join('\n')}`,
             });
         }
+        return response.trim(); // maybe need to ensure that I'm only doing this in this mode
     }
     catch (error) {
         console.error('Error during RAG process:', error);
