@@ -42,6 +42,7 @@ const ignoredDirs = new Set([
   'logs',
   'tmp',
   'temp',
+  '.temp',
 ])
 
 const allowedExtensions = new Set([
@@ -68,7 +69,10 @@ async function readFilesRecursively(dir: string): Promise<string[]> {
       entries.map(async (entry) => {
         const res = path.resolve(dir, entry.name)
 
-        if (entry.isDirectory() && ignoredDirs.has(entry.name)) {
+        if (
+          entry.isDirectory() &&
+          (ignoredDirs.has(entry.name) || entry.name.startsWith('.'))
+        ) {
           return []
         }
 
