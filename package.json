@@ -8,7 +8,8 @@
     "start": "node dist/main.js",
     "setup": "npm install && npm run build",
     "link": "npm run build && chmod +x dist/main.js && ln -sf $(pwd)/dist/main.js /usr/local/bin/nyorai2",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "start:ui": "npm --prefix frontend run dev"
   },
   "type": "module",
   "keywords": [],
