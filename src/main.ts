@@ -72,6 +72,8 @@ async function promptLoop(indexName: string) {
     },
   ]
 
+  const previousResults = new Set<string>()
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -84,7 +86,7 @@ async function promptLoop(indexName: string) {
         return
       }
 
-      await performRAG(query, indexName, chatHistory, {
+      await performRAG(query, indexName, chatHistory, previousResults, {
         indexer: pc,
         embedder: openai,
         debugMode,

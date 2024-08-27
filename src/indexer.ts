@@ -45,6 +45,7 @@ const ignoredDirs = new Set([
 ])
 
 const allowedExtensions = new Set([
+  '.json',
   '.ts',
   '.tsx',
   '.js',

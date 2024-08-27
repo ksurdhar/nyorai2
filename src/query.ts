@@ -6,6 +6,7 @@ async function performRAG(
   query: string,
   indexName: string,
   chatHistory: any[],
+  previousResults: Set<string>,
   {
     indexer: pc,
     embedder: openai,
@@ -41,7 +42,8 @@ async function performRAG(
       .filter(
         (match) =>
           match.score !== undefined &&
-          (match.score >= medianScore || match.score >= meanScore)
+          (match.score >= medianScore || match.score >= meanScore) &&
+          !previousResults.has(match.metadata?.path as string)
       )
       .slice(0, maxContexts)
 
@@ -53,10 +55,15 @@ async function performRAG(
       relevantContexts.length < minContexts &&
       searchResults.matches.length > relevantContexts.length
     ) {
-      relevantContexts.push(
-        searchResults.matches[relevantContexts.length].metadata?.text
-      )
+      const match = searchResults.matches[relevantContexts.length]
+      if (!previousResults.has(match.metadata?.path as string)) {
+        relevantContexts.push(match.metadata?.text)
+      }
     }
+
+    relevantMatches.forEach((match) => {
+      previousResults.add(match.metadata?.path as string)
+    })
 
     chatHistory.push({
       role: 'user',
@@ -92,11 +99,15 @@ async function performRAG(
     })
 
     if (debugMode) {
-      const filesConsidered = relevantMatches
-        .map((match) => match.metadata?.path)
-        .filter(Boolean)
+      const filesConsidered = Array.from(previousResults)
       console.log('\nFiles considered when answering the question:')
       filesConsidered.forEach((file) => console.log(file))
+      chatHistory.push({
+        role: 'assistant',
+        content: `Files considered when answering the question:\n${filesConsidered.join(
+          '\n'
+        )}`,
+      })
     }
   } catch (error) {
     console.error('Error during RAG process:', error)

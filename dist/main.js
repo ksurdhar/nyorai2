@@ -52,6 +52,7 @@ async function promptLoop(indexName) {
             content: 'You are a helpful assistant knowledgeable about codebases.',
         },
     ];
+    const previousResults = new Set();
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
@@ -62,7 +63,7 @@ async function promptLoop(indexName) {
                 rl.close();
                 return;
             }
-            await performRAG(query, indexName, chatHistory, {
+            await performRAG(query, indexName, chatHistory, previousResults, {
                 indexer: pc,
                 embedder: openai,
                 debugMode,

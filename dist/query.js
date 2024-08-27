@@ -1,5 +1,5 @@
 import { mean, median } from 'mathjs';
-async function performRAG(query, indexName, chatHistory, { indexer: pc, embedder: openai, debugMode, }) {
+async function performRAG(query, indexName, chatHistory, previousResults, { indexer: pc, embedder: openai, debugMode, }) {
     try {
         const queryEmbedding = await openai.embeddings.create({
             model: 'text-embedding-3-small',
@@ -21,15 +21,22 @@ async function performRAG(query, indexName, chatHistory, { indexer: pc, embedder
         const maxContexts = 10;
         const relevantMatches = searchResults.matches
             .filter((match) => match.score !== undefined &&
-            (match.score >= medianScore || match.score >= meanScore))
+            (match.score >= medianScore || match.score >= meanScore) &&
+            !previousResults.has(match.metadata?.path))
             .slice(0, maxContexts);
         const relevantContexts = relevantMatches
             .map((match) => match.metadata?.text)
             .filter(Boolean);
         while (relevantContexts.length < minContexts &&
             searchResults.matches.length > relevantContexts.length) {
-            relevantContexts.push(searchResults.matches[relevantContexts.length].metadata?.text);
+            const match = searchResults.matches[relevantContexts.length];
+            if (!previousResults.has(match.metadata?.path)) {
+                relevantContexts.push(match.metadata?.text);
+            }
         }
+        relevantMatches.forEach((match) => {
+            previousResults.add(match.metadata?.path);
+        });
         chatHistory.push({
             role: 'user',
             content: query,
@@ -55,11 +62,13 @@ async function performRAG(query, indexName, chatHistory, { indexer: pc, embedder
             content: response.trim(),
         });
         if (debugMode) {
-            const filesConsidered = relevantMatches
-                .map((match) => match.metadata?.path)
-                .filter(Boolean);
+            const filesConsidered = Array.from(previousResults);
             console.log('\nFiles considered when answering the question:');
             filesConsidered.forEach((file) => console.log(file));
+            chatHistory.push({
+                role: 'assistant',
+                content: `Files considered when answering the question:\n${filesConsidered.join('\n')}`,
+            });
         }
     }
     catch (error) {
