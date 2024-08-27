@@ -1,6 +1,6 @@
 import { Pinecone } from '@pinecone-database/pinecone'
 import { mean, median } from 'mathjs'
-import openai from 'openai'
+import OpenAI from 'openai'
 
 async function performRAG(
   query: string,
@@ -10,7 +10,7 @@ async function performRAG(
     indexer: pc,
     embedder: openai,
     debugMode,
-  }: { indexer: Pinecone; embedder: openai; debugMode: boolean }
+  }: { indexer: Pinecone; embedder: OpenAI; debugMode: boolean }
 ) {
   try {
     const queryEmbedding = await openai.embeddings.create({

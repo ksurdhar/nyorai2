@@ -27,11 +27,13 @@ program
     .option('-d, --dir <directory>', 'Directory to index')
     .option('-q, --query', 'Activate query prompt mode')
     .option('--debug', 'Enable debug mode')
+    .option('--dryrun', 'Enable dryrun mode')
     .parse(process.argv);
 const options = program.opts();
 const directory = options.dir || process.cwd();
 const queryMode = options.query || false;
 const debugMode = options.debug || false;
+const dryrunMode = options.dryrun || false;
 function findProjectRoot(dir) {
     let currentDir = dir;
     while (currentDir !== path.parse(currentDir).root) {
@@ -80,8 +82,11 @@ async function main() {
         }
         else {
             const files = await readFilesRecursively(directory);
-            await indexFiles(files, indexName, { indexer: pc, embedder: openai });
-            console.log(`Successfully indexed ${files.length} files in Pinecone under index '${indexName}'`);
+            await indexFiles(files, indexName, {
+                indexer: pc,
+                embedder: openai,
+                dryrunMode,
+            });
         }
     }
     catch (error) {

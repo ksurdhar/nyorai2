@@ -69,7 +69,7 @@ async function initializePineconeIndex(indexName, { indexer: pc }) {
             }
             else {
                 console.log(`Waiting for Pinecone index '${indexName}' to be ready...`);
-                await new Promise((resolve) => setTimeout(resolve, 5000));
+                await new Promise((resolve) => setTimeout(resolve, 2000));
             }
         }
     }
@@ -78,31 +78,39 @@ async function initializePineconeIndex(indexName, { indexer: pc }) {
         throw error;
     }
 }
-async function indexFiles(files, indexName, { indexer: pc, embedder: openai }) {
+async function indexFiles(files, indexName, { indexer: pc, embedder: openai, dryrunMode, }) {
     const index = pc.index(indexName);
+    let successfulCount = 0;
     for (const file of files) {
         try {
             const content = await fs.readFile(file, 'utf8');
             const contentWithFilePath = `File path: ${file}\n\n${content}`;
-            const embedding = await openai.embeddings.create({
-                model: 'text-embedding-3-small',
-                input: contentWithFilePath,
-            });
-            await index.upsert([
-                {
-                    id: file,
-                    values: embedding.data[0].embedding,
-                    metadata: {
-                        path: file,
-                        text: contentWithFilePath,
+            if (dryrunMode) {
+                console.log(`[Dry Run] Indexed file: ${file}`);
+            }
+            else {
+                const embedding = await openai.embeddings.create({
+                    model: 'text-embedding-3-small',
+                    input: contentWithFilePath,
+                });
+                await index.upsert([
+                    {
+                        id: file,
+                        values: embedding.data[0].embedding,
+                        metadata: {
+                            path: file,
+                            text: contentWithFilePath,
+                        },
                     },
-                },
-            ]);
-            console.log(`Indexed file: ${file}`);
+                ]);
+                console.log(`Indexed file: ${file}`);
+            }
+            successfulCount++;
         }
         catch (error) {
             console.error(`Error indexing file ${file}:`, error);
         }
     }
+    console.log(`Successfully ${dryrunMode ? 'simulated indexing' : 'indexed'} ${successfulCount} out of ${files.length} files in Pinecone under index '${indexName}'${dryrunMode ? ' (dry run)' : ''}`);
 }
 export { initializePineconeIndex, readFilesRecursively, indexFiles };
