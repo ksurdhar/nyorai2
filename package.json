@@ -2,12 +2,12 @@
   "name": "nyorai2",
   "version": "1.0.0",
   "description": "A CLI tool for indexing directories with Pinecone and OpenAI",
-  "main": "src/index.ts",
+  "main": "src/main.ts",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "node dist/main.js",
     "setup": "npm install && npm run build",
-    "link": "npm run build && chmod +x dist/index.js && ln -sf $(pwd)/dist/index.js /usr/local/bin/nyorai2",
+    "link": "npm run build && chmod +x dist/main.js && ln -sf $(pwd)/dist/main.js /usr/local/bin/nyorai2",
     "clean": "rm -rf dist"
   },
   "type": "module",

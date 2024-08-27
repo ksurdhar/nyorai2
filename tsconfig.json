@@ -9,6 +9,6 @@
     "skipLibCheck": true,
     "strict": true
   },
-  "include": ["src/**/*.ts", "src/index.ts"],
+  "include": ["src/**/*.ts", "src/main.ts"],
   "exclude": ["node_modules"]
 }
