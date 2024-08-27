@@ -124,7 +124,6 @@ async function initializePineconeIndex(
     throw error
   }
 }
-
 async function indexFiles(
   files: string[],
   indexName: string,
@@ -137,7 +136,8 @@ async function indexFiles(
   const cache = await loadCache()
   const index = pc.index(indexName)
   let successfulCount = 0
-  const batchSize = 50
+  const batchSize = 20
+  const tooLargeFiles: string[] = []
 
   console.time('Indexing Time')
 
@@ -190,16 +190,26 @@ async function indexFiles(
 
             successfulCount++
           } catch (error) {
-            console.error(`Error indexing file ${file}:`, error)
+            if (
+              error instanceof Error &&
+              error.message.includes("This model's maximum context length is")
+            ) {
+              console.error(
+                `File too large to index: ${file} - ${error.message}`
+              )
+              tooLargeFiles.push(file)
+            } else {
+              console.error(`Error indexing file ${file}:`, error)
+            }
           }
         })
       )
+
+      await saveCache(cache)
     } catch (error) {
       console.error('Error processing batch:', error)
     }
   }
-
-  await saveCache(cache)
 
   console.timeEnd('Indexing Time')
 
@@ -212,6 +222,14 @@ async function indexFiles(
       dryrunMode ? ' (dry run)' : ''
     }`
   )
+
+  if (tooLargeFiles.length > 0) {
+    console.log(
+      `The following files were too large to index and were skipped:\n${tooLargeFiles.join(
+        '\n'
+      )}`
+    )
+  }
 }
 
 export { initializePineconeIndex, readFilesRecursively, indexFiles }

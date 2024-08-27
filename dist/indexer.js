@@ -111,9 +111,9 @@ async function indexFiles(files, indexName, { indexer: pc, embedder: openai, dry
     const cache = await loadCache();
     const index = pc.index(indexName);
     let successfulCount = 0;
-    const batchSize = 50;
+    const batchSize = 20;
+    const tooLargeFiles = [];
     console.time('Indexing Time');
-    // Split files into batches
     const fileBatches = [];
     for (let i = 0; i < files.length; i += batchSize) {
         fileBatches.push(files.slice(i, i + batchSize));
@@ -156,16 +156,26 @@ async function indexFiles(files, indexName, { indexer: pc, embedder: openai, dry
                     successfulCount++;
                 }
                 catch (error) {
-                    console.error(`Error indexing file ${file}:`, error);
+                    if (error instanceof Error &&
+                        error.message.includes("This model's maximum context length is")) {
+                        console.error(`File too large to index: ${file} - ${error.message}`);
+                        tooLargeFiles.push(file);
+                    }
+                    else {
+                        console.error(`Error indexing file ${file}:`, error);
+                    }
                 }
             }));
+            await saveCache(cache);
         }
         catch (error) {
             console.error('Error processing batch:', error);
         }
     }
-    await saveCache(cache);
     console.timeEnd('Indexing Time');
     console.log(`Successfully ${dryrunMode ? 'simulated indexing' : 'indexed'} ${successfulCount} out of ${files.length} files in Pinecone under index '${indexName}'${dryrunMode ? ' (dry run)' : ''}`);
+    if (tooLargeFiles.length > 0) {
+        console.log(`The following files were too large to index and were skipped:\n${tooLargeFiles.join('\n')}`);
+    }
 }
 export { initializePineconeIndex, readFilesRecursively, indexFiles };
