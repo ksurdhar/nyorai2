@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import './App.css'
 import { CodeBlock } from './codeHighlighter'
@@ -133,7 +133,7 @@ function App() {
               ))}
             </select>
           </div>
-
+          {/* 
           <div>
             <label htmlFor="query-input">Ask a question:</label>
             <input
@@ -143,7 +143,7 @@ function App() {
               onChange={(e) => setQuery(e.target.value)}
             />
             <button onClick={handleQuerySubmit}>Submit</button>
-          </div>
+          </div> */}
 
           <div>
             <h2>Chat History:</h2>
@@ -176,6 +176,21 @@ function App() {
           </div>
         </div>
       )}
+
+      <div className="input-container">
+        <textarea
+          id="query-input"
+          rows={1}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          style={{ resize: 'none' }}
+          onInput={(e) => {
+            e.currentTarget.style.height = 'auto'
+            e.currentTarget.style.height = `${e.currentTarget.scrollHeight}px`
+          }}
+        />
+        <button onClick={handleQuerySubmit}>Submit</button>
+      </div>
 
       <p className="read-the-docs">I do not seek, I find. </p>
     </>

@@ -2,12 +2,13 @@ import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import path from 'path'
-import { Pinecone } from '@pinecone-database/pinecone' // Import Pinecone
+import { Pinecone } from '@pinecone-database/pinecone'
 import OpenAI from 'openai'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 import { performRAGStream } from '../dist/query.js'
-import { v4 as uuidv4 } from 'uuid' // Import UUID library for generating unique stream IDs
+import { v4 as uuidv4 } from 'uuid'
+
 const streams = new Map() // Store ongoing streams
 
 const __filename = fileURLToPath(import.meta.url)

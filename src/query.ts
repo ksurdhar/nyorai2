@@ -93,9 +93,9 @@ async function performRAGStream(
       })
     )
 
-    relevantContexts.forEach((context) => {
-      previousResults.add(context)
-    })
+    // relevantContexts.forEach((context) => {
+    //   previousResults.add(context)
+    // })
 
     return {
       readableStream,

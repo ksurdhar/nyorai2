@@ -44,9 +44,9 @@ async function performRAGStream(query, indexName, chatHistory, previousResults, 
             messages: chatHistory,
             stream: true,
         }));
-        relevantContexts.forEach((context) => {
-            previousResults.add(context);
-        });
+        // relevantContexts.forEach((context) => {
+        //   previousResults.add(context)
+        // })
         return {
             readableStream,
             previousResults,
