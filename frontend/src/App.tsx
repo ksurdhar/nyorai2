@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import './App.css'
 import { CodeBlock } from './codeHighlighter'
+import { v4 as uuidv4 } from 'uuid'
 
 function App() {
   const [indexes, setIndexes] = useState<string[]>([])
@@ -11,10 +12,21 @@ function App() {
   const [conversation, setConversation] = useState<
     { query: string; response: string }[]
   >([])
-  const [chatHistory, setChatHistory] = useState<
-    { role: string; content: string }[]
-  >([])
+
   const [previousResults, setPreviousResults] = useState<string[]>([])
+  const [userId, setUserId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const existingUserId = sessionStorage.getItem('userId')
+
+    if (!existingUserId) {
+      const newUserId = uuidv4()
+      setUserId(newUserId)
+      sessionStorage.setItem('userId', newUserId)
+    } else {
+      setUserId(existingUserId)
+    }
+  }, [])
 
   useEffect(() => {
     const fetchIndexes = async () => {
@@ -51,7 +63,7 @@ function App() {
         body: JSON.stringify({
           query,
           indexName: selectedIndex,
-          chatHistory,
+          userId,
           previousResults,
         }),
       })
@@ -72,12 +84,7 @@ function App() {
         try {
           const data = JSON.parse(event.data)
           if (data.previousResults) {
-            console.log('previous results', data.previousResults)
-
             setPreviousResults(data.previousResults)
-          } else if (data.chatHistory) {
-            console.log('chatHistory', data.chatHistory)
-            setChatHistory(data.chatHistory)
           } else {
             const content = data.choices?.[0]?.delta?.content || ''
 

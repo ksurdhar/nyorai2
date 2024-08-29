@@ -46,16 +46,26 @@ app.get('/api/indexes', async (req, res) => {
   }
 })
 
+// needs some logic around cleaning up
+const chatHistories = new Map()
+
 app.post('/api/query', (req, res) => {
-  const { query, indexName, chatHistory, previousResults } = req.body
+  const { query, indexName, previousResults, userId } = req.body
   const streamId = uuidv4()
 
-  // console.log(previousResults)
+  const chatHistory = chatHistories.get(userId) || [
+    {
+      role: 'system',
+      content: 'You are a helpful assistant knowledgeable about codebases.',
+    },
+  ]
+
+  chatHistories.set(userId, chatHistory)
 
   streams.set(streamId, {
     query,
     indexName,
-    chatHistory,
+    userId,
     previousResults: new Set(previousResults),
   })
 
@@ -69,7 +79,10 @@ app.get('/api/query/stream/:streamId', async (req, res) => {
     return res.status(404).json({ error: 'Stream not found' })
   }
 
-  const { query, indexName, chatHistory, previousResults } = streamState
+  const { query, indexName, previousResults, userId } = streamState
+  const chatHistory = chatHistories.get(userId) || []
+
+  console.log('chat history')
 
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
@@ -115,16 +128,10 @@ app.get('/api/query/stream/:streamId', async (req, res) => {
         role: 'assistant',
         content: finalResponse,
       })
+      chatHistories.set(userId, chatHistory)
     }
 
     res.write('data: [DONE]\n\n')
-
-    // Send the updated chat history to the client
-    res.write(
-      `data: ${JSON.stringify({
-        chatHistory,
-      })}\n\n`
-    )
 
     res.end()
     streams.delete(streamId)
