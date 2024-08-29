@@ -50,7 +50,7 @@ app.post('/api/query', (req, res) => {
   const { query, indexName, chatHistory, previousResults } = req.body
   const streamId = uuidv4()
 
-  console.log(previousResults)
+  // console.log(previousResults)
 
   streams.set(streamId, {
     query,
@@ -61,7 +61,6 @@ app.post('/api/query', (req, res) => {
 
   res.json({ streamId })
 })
-
 app.get('/api/query/stream/:streamId', async (req, res) => {
   const { streamId } = req.params
   const streamState = streams.get(streamId)
@@ -95,18 +94,38 @@ app.get('/api/query/stream/:streamId', async (req, res) => {
       })}\n\n`
     )
 
+    let finalResponse = ''
+
     for await (const chunk of readableStream) {
       try {
         const chunkData =
           typeof chunk === 'string' ? chunk : JSON.stringify(chunk)
         res.write(`data: ${chunkData}\n\n`)
+        finalResponse += chunk.choices[0].delta.content
       } catch (error) {
         console.error('Error writing chunk:', error)
         break
       }
     }
 
+    finalResponse = finalResponse.trim()
+
+    if (finalResponse) {
+      chatHistory.push({
+        role: 'assistant',
+        content: finalResponse,
+      })
+    }
+
     res.write('data: [DONE]\n\n')
+
+    // Send the updated chat history to the client
+    res.write(
+      `data: ${JSON.stringify({
+        chatHistory,
+      })}\n\n`
+    )
+
     res.end()
     streams.delete(streamId)
   } catch (error) {

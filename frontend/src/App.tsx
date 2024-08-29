@@ -8,8 +8,11 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [selectedIndex, setSelectedIndex] = useState<string | null>(null)
   const [query, setQuery] = useState<string>('')
-  const [chatHistory, setChatHistory] = useState<
+  const [conversation, setConversation] = useState<
     { query: string; response: string }[]
+  >([])
+  const [chatHistory, setChatHistory] = useState<
+    { role: string; content: string }[]
   >([])
   const [previousResults, setPreviousResults] = useState<string[]>([])
 
@@ -37,21 +40,9 @@ function App() {
     if (!query || !selectedIndex) return
 
     const newChatEntry = { query, response: '' }
-    setChatHistory((prev) => [...prev, newChatEntry])
-    setQuery('')
+    setConversation((prev) => [...prev, newChatEntry])
 
     try {
-      const formattedChatHistory = [
-        {
-          role: 'system',
-          content: 'You are a helpful assistant knowledgeable about codebases.',
-        },
-        ...chatHistory.flatMap(({ query, response }) => [
-          { role: 'user', content: query },
-          { role: 'assistant', content: response },
-        ]),
-      ]
-
       const response = await fetch('http://localhost:5001/api/query', {
         method: 'POST',
         headers: {
@@ -60,10 +51,12 @@ function App() {
         body: JSON.stringify({
           query,
           indexName: selectedIndex,
-          chatHistory: formattedChatHistory,
+          chatHistory,
           previousResults,
         }),
       })
+
+      setQuery('')
 
       if (!response.ok) {
         throw new Error('Failed to initiate query')
@@ -79,19 +72,22 @@ function App() {
         try {
           const data = JSON.parse(event.data)
           if (data.previousResults) {
-            console.log('Data', data)
+            console.log('previous results', data.previousResults)
 
             setPreviousResults(data.previousResults)
+          } else if (data.chatHistory) {
+            console.log('chatHistory', data.chatHistory)
+            setChatHistory(data.chatHistory)
           } else {
             const content = data.choices?.[0]?.delta?.content || ''
 
-            setChatHistory((prev) => {
+            setConversation((prev) => {
               const currentEntry = prev[prev.length - 1]
               const updatedEntry = {
                 ...currentEntry,
                 response: currentEntry.response + content,
               }
-              return [...prev.slice(0, -1), updatedEntry] // Replace last entry with updated one
+              return [...prev.slice(0, -1), updatedEntry]
             })
           }
         } catch (error) {
@@ -144,7 +140,7 @@ function App() {
 
           <div>
             <h2>Chat History:</h2>
-            {chatHistory.map(({ query, response }, index) => (
+            {conversation.map(({ query, response }, index) => (
               <div key={index}>
                 <p>
                   <strong>You:</strong> {query}
