@@ -21,24 +21,30 @@ pre {
   filter: drop-shadow(0 0 2em #61dafbaa);
 }
 
+.chat-container {
+  padding: 0 10%;
+  max-width: 1024px;
+}
+
 .input-container {
   position: fixed;
   bottom: 0;
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
-  max-width: 600px; /* Optional: Adjust the max-width to your preference */
   padding: 10px;
   display: flex;
   align-items: center;
   background-color: #242424; /* Match root background */
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1); /* Optional: shadow for depth */
+  justify-content: center;
 }
 
 .input-container textarea {
   flex: 1;
   padding: 10px;
   border-radius: 4px;
+  max-width: 600px;
   border: 1px solid #ccc;
   margin-right: 10px;
   font-family: inherit; /* Inherit from :root */

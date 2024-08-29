@@ -8,7 +8,11 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const cacheFilePath = path.resolve(__dirname, 'index_cache.json')
 
-async function loadCache(): Promise<Record<string, number>> {
+interface Cache {
+  [indexName: string]: Record<string, number>
+}
+
+async function loadCache(): Promise<Cache> {
   try {
     const cacheExists = await fs.pathExists(cacheFilePath)
     if (cacheExists) {
@@ -23,7 +27,7 @@ async function loadCache(): Promise<Record<string, number>> {
   }
 }
 
-async function saveCache(cache: Record<string, number>) {
+async function saveCache(cache: Cache): Promise<void> {
   try {
     await fs.writeJson(cacheFilePath, cache, { spaces: 2 })
   } catch (error) {
@@ -93,7 +97,7 @@ async function readFilesRecursively(dir: string): Promise<string[]> {
 async function initializePineconeIndex(
   indexName: string,
   { indexer: pc }: { indexer: Pinecone }
-) {
+): Promise<void> {
   try {
     const { indexes: existingIndexes } = await pc.listIndexes()
     const indexNames = existingIndexes?.map((index) => index.name)
@@ -121,6 +125,7 @@ async function initializePineconeIndex(
     throw error
   }
 }
+
 async function indexFiles(
   files: string[],
   indexName: string,
@@ -129,8 +134,9 @@ async function indexFiles(
     embedder: openai,
     dryrunMode,
   }: { indexer: Pinecone; embedder: OpenAI; dryrunMode: boolean }
-) {
+): Promise<void> {
   const cache = await loadCache()
+  const indexCache = cache[indexName] || {} // Get the cache for the specific index
   const index = pc.index(indexName)
   let successfulCount = 0
   const batchSize = 20
@@ -150,7 +156,7 @@ async function indexFiles(
           try {
             const stats = await fs.stat(file)
             const mdate = stats.mtimeMs
-            const cachedMdate = cache[file]
+            const cachedMdate = indexCache[file] // Check the cache under the index name
 
             if (cachedMdate && mdate <= cachedMdate) {
               console.log(
@@ -182,7 +188,7 @@ async function indexFiles(
                 },
               ])
               console.log(`Indexed file: ${file}`)
-              cache[file] = mdate
+              indexCache[file] = mdate // Save the modification date under the specific index
             }
 
             successfulCount++
@@ -202,6 +208,7 @@ async function indexFiles(
         })
       )
 
+      cache[indexName] = indexCache // Update the cache with the new index data
       await saveCache(cache)
     } catch (error) {
       console.error('Error processing batch:', error)

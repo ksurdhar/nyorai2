@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import './App.css'
 import { CodeBlock } from './codeHighlighter'
@@ -133,19 +133,8 @@ function App() {
               ))}
             </select>
           </div>
-          {/* 
-          <div>
-            <label htmlFor="query-input">Ask a question:</label>
-            <input
-              id="query-input"
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <button onClick={handleQuerySubmit}>Submit</button>
-          </div> */}
 
-          <div>
+          <div className="chat-container">
             <h2>Chat History:</h2>
             {conversation.map(({ query, response }, index) => (
               <div key={index}>
