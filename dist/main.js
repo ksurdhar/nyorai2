@@ -28,12 +28,14 @@ program
     .option('-q, --query', 'Activate query prompt mode')
     .option('--debug', 'Enable debug mode')
     .option('--dryrun', 'Enable dryrun mode')
+    .option('--force', 'Force indexing in the current directory')
     .parse(process.argv);
 const options = program.opts();
 const directory = options.dir || process.cwd();
 const queryMode = options.query || false;
 const debugMode = options.debug || false;
 const dryrunMode = options.dryrun || false;
+const forceMode = options.force || false;
 function findProjectRoot(dir) {
     let currentDir = dir;
     while (currentDir !== path.parse(currentDir).root) {
@@ -81,8 +83,8 @@ async function promptLoop(indexName) {
 }
 async function main() {
     try {
-        const projectRoot = findProjectRoot(directory);
-        const indexName = projectRoot;
+        const projectRoot = forceMode ? directory : findProjectRoot(directory);
+        const indexName = path.basename(projectRoot);
         await initializePineconeIndex(indexName, { indexer: pc });
         if (queryMode) {
             await promptLoop(indexName);

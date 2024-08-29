@@ -21,13 +21,47 @@ pre {
   filter: drop-shadow(0 0 2em #61dafbaa);
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.chat-container {
+  padding: 0 10%;
+  max-width: 1024px;
+}
+
+.input-container {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  background-color: #242424; /* Match root background */
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1); /* Optional: shadow for depth */
+  justify-content: center;
+}
+
+.input-container textarea {
+  flex: 1;
+  padding: 10px;
+  border-radius: 4px;
+  max-width: 600px;
+  border: 1px solid #ccc;
+  margin-right: 10px;
+  font-family: inherit; /* Inherit from :root */
+  min-width: 200px; /* Set your preferred minimum width */
+  font-size: 16px; /* Optional: Adjust to match root font-size */
+  background-color: #333; /* Optional: match or contrast with the container */
+  color: #fff; /* Optional: Adjust text color */
+}
+
+.input-container button {
+  padding: 10px;
+  border-radius: 4px;
+  border: none;
+  color: white;
+  font-family: inherit; /* Inherit from :root */
+  font-size: 16px; /* Optional: Adjust to match root font-size */
+  cursor: pointer;
 }
 
 @media (prefers-reduced-motion: no-preference) {

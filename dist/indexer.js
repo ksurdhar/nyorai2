@@ -108,6 +108,7 @@ async function initializePineconeIndex(indexName, { indexer: pc }) {
 }
 async function indexFiles(files, indexName, { indexer: pc, embedder: openai, dryrunMode, }) {
     const cache = await loadCache();
+    const indexCache = cache[indexName] || {}; // Get the cache for the specific index
     const index = pc.index(indexName);
     let successfulCount = 0;
     const batchSize = 20;
@@ -123,7 +124,7 @@ async function indexFiles(files, indexName, { indexer: pc, embedder: openai, dry
                 try {
                     const stats = await fs.stat(file);
                     const mdate = stats.mtimeMs;
-                    const cachedMdate = cache[file];
+                    const cachedMdate = indexCache[file]; // Check the cache under the index name
                     if (cachedMdate && mdate <= cachedMdate) {
                         console.log(`Skipping file: ${file} (not modified since last index)`);
                         return;
@@ -150,7 +151,7 @@ async function indexFiles(files, indexName, { indexer: pc, embedder: openai, dry
                             },
                         ]);
                         console.log(`Indexed file: ${file}`);
-                        cache[file] = mdate;
+                        indexCache[file] = mdate; // Save the modification date under the specific index
                     }
                     successfulCount++;
                 }
@@ -165,6 +166,7 @@ async function indexFiles(files, indexName, { indexer: pc, embedder: openai, dry
                     }
                 }
             }));
+            cache[indexName] = indexCache; // Update the cache with the new index data
             await saveCache(cache);
         }
         catch (error) {

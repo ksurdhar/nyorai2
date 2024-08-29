@@ -124,15 +124,21 @@ async function performRAGStream(
       pc,
       previousResults
     )
+
     await addQueryToHistory(query, relevantContexts, chatHistory)
 
-    return Readable.from(
+    const readableStream = Readable.from(
       await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: chatHistory,
         stream: true,
       })
     )
+
+    return {
+      readableStream,
+      previousResults,
+    }
   } catch (error) {
     console.error('Error during RAG process:', error)
   }

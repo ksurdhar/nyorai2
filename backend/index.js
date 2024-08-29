@@ -2,12 +2,13 @@ import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import path from 'path'
-import { Pinecone } from '@pinecone-database/pinecone' // Import Pinecone
+import { Pinecone } from '@pinecone-database/pinecone'
 import OpenAI from 'openai'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 import { performRAGStream } from '../dist/query.js'
-import { v4 as uuidv4 } from 'uuid' // Import UUID library for generating unique stream IDs
+import { v4 as uuidv4 } from 'uuid'
+
 const streams = new Map() // Store ongoing streams
 
 const __filename = fileURLToPath(import.meta.url)
@@ -36,7 +37,6 @@ const openai = new OpenAI({
 app.use(cors())
 app.use(express.json())
 
-// Example route to list indexes
 app.get('/api/indexes', async (req, res) => {
   try {
     const { indexes: existingIndexes } = await pc.listIndexes()
@@ -47,32 +47,31 @@ app.get('/api/indexes', async (req, res) => {
   }
 })
 
-// Example route to handle queries
+// needs some logic around cleaning up
+const chatHistories = new Map()
 
 app.post('/api/query', (req, res) => {
-  const { query, indexName } = req.body
-  const streamId = uuidv4() // Generate a unique stream ID
+  const { query, indexName, previousResults, userId } = req.body
+  const streamId = uuidv4()
 
-  const chatHistory = [
+  const chatHistory = chatHistories.get(userId) || [
     {
       role: 'system',
       content: 'You are a helpful assistant knowledgeable about codebases.',
     },
   ]
-  const previousResults = new Set()
 
-  // Store the stream state by streamId
+  chatHistories.set(userId, chatHistory)
+
   streams.set(streamId, {
     query,
     indexName,
-    chatHistory,
-    previousResults,
+    userId,
+    previousResults: new Set(previousResults),
   })
 
-  // Respond with the stream ID
   res.json({ streamId })
 })
-
 app.get('/api/query/stream/:streamId', async (req, res) => {
   const { streamId } = req.params
   const streamState = streams.get(streamId)
@@ -81,48 +80,70 @@ app.get('/api/query/stream/:streamId', async (req, res) => {
     return res.status(404).json({ error: 'Stream not found' })
   }
 
-  const { query, indexName, chatHistory, previousResults } = streamState
+  const { query, indexName, previousResults, userId } = streamState
+  const chatHistory = chatHistories.get(userId) || []
+
+  console.log('chat history')
 
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
 
   try {
-    const stream = await performRAGStream(
-      query,
-      indexName,
-      chatHistory,
-      previousResults,
-      {
-        indexer: pc,
-        embedder: openai,
-      }
+    const { readableStream, previousResults: updatedResults } =
+      await performRAGStream(
+        query,
+        indexName,
+        chatHistory,
+        new Set(previousResults),
+        {
+          indexer: pc,
+          embedder: openai,
+        }
+      )
+
+    res.write(
+      `data: ${JSON.stringify({
+        previousResults: Array.from(updatedResults),
+      })}\n\n`
     )
 
-    for await (const chunk of stream) {
+    let finalResponse = ''
+
+    for await (const chunk of readableStream) {
       try {
-        // Ensure the chunk is a string or convert it to a JSON string
         const chunkData =
           typeof chunk === 'string' ? chunk : JSON.stringify(chunk)
         res.write(`data: ${chunkData}\n\n`)
+        finalResponse += chunk.choices[0].delta.content
       } catch (error) {
         console.error('Error writing chunk:', error)
-        break // Stop processing further if writing fails
+        break
       }
     }
 
-    res.write('data: [DONE]\n\n') // Optional: Mark the end of the stream
+    finalResponse = finalResponse.trim()
+
+    if (finalResponse) {
+      chatHistory.push({
+        role: 'assistant',
+        content: finalResponse,
+      })
+      chatHistories.set(userId, chatHistory)
+    }
+
+    res.write('data: [DONE]\n\n')
+
     res.end()
-    streams.delete(streamId) // Clean up the stream state
+    streams.delete(streamId)
   } catch (error) {
     console.error('Error streaming data:', error)
 
-    // Ensure you do not send another response after streaming has started
     if (!res.headersSent) {
       res.status(500).json({ error: 'Failed to stream data' })
     }
 
-    streams.delete(streamId) // Clean up on error
+    streams.delete(streamId)
   }
 })
 
