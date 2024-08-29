@@ -33,6 +33,29 @@ async function addQueryToHistory(query, relevantContexts, chatHistory) {
         content: `Here are some relevant contexts: ${relevantContexts.join('\n')}\n\nAnswer the following question: ${query}`,
     });
 }
+async function performRAGStream(query, indexName, chatHistory, previousResults, options) {
+    try {
+        const { indexer: pc, embedder: openai } = options;
+        const queryVector = await getQueryEmbedding(query, openai);
+        const relevantContexts = await getRelevantMatches(queryVector, indexName, pc, previousResults);
+        await addQueryToHistory(query, relevantContexts, chatHistory);
+        const readableStream = Readable.from(await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: chatHistory,
+            stream: true,
+        }));
+        relevantContexts.forEach((context) => {
+            previousResults.add(context);
+        });
+        return {
+            readableStream,
+            previousResults,
+        };
+    }
+    catch (error) {
+        console.error('Error during RAG process:', error);
+    }
+}
 async function streamResponse(openai, chatHistory, debugMode, previousResults) {
     const stream = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
@@ -60,22 +83,6 @@ async function streamResponse(openai, chatHistory, debugMode, previousResults) {
         });
     }
     return response.trim();
-}
-async function performRAGStream(query, indexName, chatHistory, previousResults, options) {
-    try {
-        const { indexer: pc, embedder: openai } = options;
-        const queryVector = await getQueryEmbedding(query, openai);
-        const relevantContexts = await getRelevantMatches(queryVector, indexName, pc, previousResults);
-        await addQueryToHistory(query, relevantContexts, chatHistory);
-        return Readable.from(await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: chatHistory,
-            stream: true,
-        }));
-    }
-    catch (error) {
-        console.error('Error during RAG process:', error);
-    }
 }
 async function performRAG(query, indexName, chatHistory, previousResults, options) {
     try {

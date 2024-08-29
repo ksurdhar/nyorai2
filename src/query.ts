@@ -65,6 +65,47 @@ async function addQueryToHistory(
   })
 }
 
+async function performRAGStream(
+  query: string,
+  indexName: string,
+  chatHistory: any[],
+  previousResults: Set<string>,
+  options: RAGOptions
+) {
+  try {
+    const { indexer: pc, embedder: openai } = options
+
+    const queryVector = await getQueryEmbedding(query, openai)
+    const relevantContexts = await getRelevantMatches(
+      queryVector,
+      indexName,
+      pc,
+      previousResults
+    )
+
+    await addQueryToHistory(query, relevantContexts, chatHistory)
+
+    const readableStream = Readable.from(
+      await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: chatHistory,
+        stream: true,
+      })
+    )
+
+    relevantContexts.forEach((context) => {
+      previousResults.add(context)
+    })
+
+    return {
+      readableStream,
+      previousResults,
+    }
+  } catch (error) {
+    console.error('Error during RAG process:', error)
+  }
+}
+
 async function streamResponse(
   openai: OpenAI,
   chatHistory: any[],
@@ -105,37 +146,6 @@ async function streamResponse(
   }
 
   return response.trim()
-}
-
-async function performRAGStream(
-  query: string,
-  indexName: string,
-  chatHistory: any[],
-  previousResults: Set<string>,
-  options: RAGOptions
-) {
-  try {
-    const { indexer: pc, embedder: openai } = options
-
-    const queryVector = await getQueryEmbedding(query, openai)
-    const relevantContexts = await getRelevantMatches(
-      queryVector,
-      indexName,
-      pc,
-      previousResults
-    )
-    await addQueryToHistory(query, relevantContexts, chatHistory)
-
-    return Readable.from(
-      await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: chatHistory,
-        stream: true,
-      })
-    )
-  } catch (error) {
-    console.error('Error during RAG process:', error)
-  }
 }
 
 async function performRAG(

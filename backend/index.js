@@ -36,7 +36,6 @@ const openai = new OpenAI({
 app.use(cors())
 app.use(express.json())
 
-// Example route to list indexes
 app.get('/api/indexes', async (req, res) => {
   try {
     const { indexes: existingIndexes } = await pc.listIndexes()
@@ -47,29 +46,19 @@ app.get('/api/indexes', async (req, res) => {
   }
 })
 
-// Example route to handle queries
-
 app.post('/api/query', (req, res) => {
-  const { query, indexName } = req.body
-  const streamId = uuidv4() // Generate a unique stream ID
+  const { query, indexName, chatHistory, previousResults } = req.body
+  const streamId = uuidv4()
 
-  const chatHistory = [
-    {
-      role: 'system',
-      content: 'You are a helpful assistant knowledgeable about codebases.',
-    },
-  ]
-  const previousResults = new Set()
+  console.log(previousResults)
 
-  // Store the stream state by streamId
   streams.set(streamId, {
     query,
     indexName,
     chatHistory,
-    previousResults,
+    previousResults: new Set(previousResults),
   })
 
-  // Respond with the stream ID
   res.json({ streamId })
 })
 
@@ -88,41 +77,46 @@ app.get('/api/query/stream/:streamId', async (req, res) => {
   res.setHeader('Connection', 'keep-alive')
 
   try {
-    const stream = await performRAGStream(
-      query,
-      indexName,
-      chatHistory,
-      previousResults,
-      {
-        indexer: pc,
-        embedder: openai,
-      }
+    const { readableStream, previousResults: updatedResults } =
+      await performRAGStream(
+        query,
+        indexName,
+        chatHistory,
+        new Set(previousResults),
+        {
+          indexer: pc,
+          embedder: openai,
+        }
+      )
+
+    res.write(
+      `data: ${JSON.stringify({
+        previousResults: Array.from(updatedResults),
+      })}\n\n`
     )
 
-    for await (const chunk of stream) {
+    for await (const chunk of readableStream) {
       try {
-        // Ensure the chunk is a string or convert it to a JSON string
         const chunkData =
           typeof chunk === 'string' ? chunk : JSON.stringify(chunk)
         res.write(`data: ${chunkData}\n\n`)
       } catch (error) {
         console.error('Error writing chunk:', error)
-        break // Stop processing further if writing fails
+        break
       }
     }
 
-    res.write('data: [DONE]\n\n') // Optional: Mark the end of the stream
+    res.write('data: [DONE]\n\n')
     res.end()
-    streams.delete(streamId) // Clean up the stream state
+    streams.delete(streamId)
   } catch (error) {
     console.error('Error streaming data:', error)
 
-    // Ensure you do not send another response after streaming has started
     if (!res.headersSent) {
       res.status(500).json({ error: 'Failed to stream data' })
     }
 
-    streams.delete(streamId) // Clean up on error
+    streams.delete(streamId)
   }
 })
 

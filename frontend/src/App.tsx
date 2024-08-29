@@ -8,9 +8,11 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [selectedIndex, setSelectedIndex] = useState<string | null>(null)
   const [query, setQuery] = useState<string>('')
-  const [response, setResponse] = useState<string>('')
+  const [chatHistory, setChatHistory] = useState<
+    { query: string; response: string }[]
+  >([])
+  const [previousResults, setPreviousResults] = useState<string[]>([])
 
-  // Fetch the indexes when the component mounts
   useEffect(() => {
     const fetchIndexes = async () => {
       try {
@@ -34,8 +36,22 @@ function App() {
   const handleQuerySubmit = async () => {
     if (!query || !selectedIndex) return
 
+    const newChatEntry = { query, response: '' }
+    setChatHistory((prev) => [...prev, newChatEntry])
+    setQuery('')
+
     try {
-      // Send the initial POST request with fetch
+      const formattedChatHistory = [
+        {
+          role: 'system',
+          content: 'You are a helpful assistant knowledgeable about codebases.',
+        },
+        ...chatHistory.flatMap(({ query, response }) => [
+          { role: 'user', content: query },
+          { role: 'assistant', content: response },
+        ]),
+      ]
+
       const response = await fetch('http://localhost:5001/api/query', {
         method: 'POST',
         headers: {
@@ -44,6 +60,8 @@ function App() {
         body: JSON.stringify({
           query,
           indexName: selectedIndex,
+          chatHistory: formattedChatHistory,
+          previousResults,
         }),
       })
 
@@ -51,24 +69,31 @@ function App() {
         throw new Error('Failed to initiate query')
       }
 
-      // Assuming the server responds with a stream ID or some identifier
       const { streamId } = await response.json()
 
-      // Use EventSource to listen to the streaming events
       const eventSource = new EventSource(
         `http://localhost:5001/api/query/stream/${streamId}`
       )
 
       eventSource.onmessage = (event) => {
         try {
-          // Parse the JSON string into an object
           const data = JSON.parse(event.data)
+          if (data.previousResults) {
+            console.log('Data', data)
 
-          // Access the specific content you want (e.g., the `content` from `delta`)
-          const content = data.choices[0]?.delta?.content || ''
+            setPreviousResults(data.previousResults)
+          } else {
+            const content = data.choices?.[0]?.delta?.content || ''
 
-          // Append the content to the response or handle it as needed
-          setResponse((prev) => prev + content)
+            setChatHistory((prev) => {
+              const currentEntry = prev[prev.length - 1]
+              const updatedEntry = {
+                ...currentEntry,
+                response: currentEntry.response + content,
+              }
+              return [...prev.slice(0, -1), updatedEntry] // Replace last entry with updated one
+            })
+          }
         } catch (error) {
           console.error('Error parsing JSON:', error)
         }
@@ -77,10 +102,8 @@ function App() {
       eventSource.onerror = (error) => {
         console.error('Error fetching data:', error)
         eventSource.close()
+        // think about deleting stream
       }
-
-      // Close the connection when you don’t need it anymore or once the response is done
-      // You may need to implement additional logic to know when to close (based on EOF)
     } catch (error) {
       console.error('Error during query submission:', error)
     }
@@ -119,37 +142,39 @@ function App() {
             <button onClick={handleQuerySubmit}>Submit</button>
           </div>
 
-          {response && (
-            <div>
-              <h2>Response:</h2>
-              <ReactMarkdown
-                components={{
-                  code({ className, children, style }) {
-                    const match = /language-(\w+)/.exec(className || '')
-
-                    return match ? (
-                      <CodeBlock
-                        language={match[1]}
-                        value={String(children).replace(/\n$/, '')}
-                      />
-                    ) : (
-                      <code className={className} style={style}>
-                        {children}
-                      </code>
-                    )
-                  },
-                }}
-              >
-                {response}
-              </ReactMarkdown>
-            </div>
-          )}
+          <div>
+            <h2>Chat History:</h2>
+            {chatHistory.map(({ query, response }, index) => (
+              <div key={index}>
+                <p>
+                  <strong>You:</strong> {query}
+                </p>
+                <ReactMarkdown
+                  components={{
+                    code({ className, children, style }) {
+                      const match = /language-(\w+)/.exec(className || '')
+                      return match ? (
+                        <CodeBlock
+                          language={match[1]}
+                          value={String(children).replace(/\n$/, '')}
+                        />
+                      ) : (
+                        <code className={className} style={style}>
+                          {children}
+                        </code>
+                      )
+                    },
+                  }}
+                >
+                  {response}
+                </ReactMarkdown>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
+      <p className="read-the-docs">I do not seek, I find. </p>
     </>
   )
 }
