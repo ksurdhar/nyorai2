@@ -169,4 +169,27 @@ async function performRAG(
   }
 }
 
-export { performRAG, performRAGStream }
+async function fileSearch(
+  query: string,
+  indexName: string,
+  pc: Pinecone,
+  openai: OpenAI
+) {
+  const index = pc.index(indexName)
+  const queryEmbedding = await getQueryEmbedding(query, openai)
+
+  const searchResults = await index.query({
+    vector: queryEmbedding,
+    topK: 10,
+    includeMetadata: true,
+  })
+
+  const results = searchResults.matches.map((match) => ({
+    filename: match.metadata?.path || 'Unknown',
+    score: match.score || 0,
+  }))
+
+  return results
+}
+
+export { performRAG, performRAGStream, fileSearch }

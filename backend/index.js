@@ -6,7 +6,7 @@ import { Pinecone } from '@pinecone-database/pinecone'
 import OpenAI from 'openai'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
-import { performRAGStream } from '../dist/query.js'
+import { performRAGStream, fileSearch } from '../dist/query.js'
 import { v4 as uuidv4 } from 'uuid'
 
 const streams = new Map() // Store ongoing streams
@@ -57,7 +57,8 @@ app.post('/api/query', (req, res) => {
   const chatHistory = chatHistories.get(userId) || [
     {
       role: 'system',
-      content: 'You are a helpful assistant knowledgeable about codebases.',
+      content:
+        'You are a helpful assistant knowledgeable about codebases. Prefer showing code examples whenever possible.',
     },
   ]
 
@@ -144,6 +145,18 @@ app.get('/api/query/stream/:streamId', async (req, res) => {
     }
 
     streams.delete(streamId)
+  }
+})
+
+app.post('/api/file-search', async (req, res) => {
+  const { query, indexName } = req.body
+
+  try {
+    const results = await fileSearch(query, indexName, pc, openai)
+    res.json(results)
+  } catch (error) {
+    console.error('Error during file search:', error)
+    res.status(500).json({ error: 'Failed to search files' })
   }
 })
 

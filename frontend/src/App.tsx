@@ -12,6 +12,10 @@ function App() {
   const [conversation, setConversation] = useState<
     { query: string; response: string }[]
   >([])
+  const [mode, setMode] = useState<'query' | 'fileSearch'>('query')
+  const [searchResults, setSearchResults] = useState<
+    { filename: string; score: number }[]
+  >([])
 
   const [previousResults, setPreviousResults] = useState<string[]>([])
   const [userId, setUserId] = useState<string | null>(null)
@@ -48,8 +52,37 @@ function App() {
     fetchIndexes()
   }, [])
 
+  const handleModeToggle = () => {
+    setMode((prev) => (prev === 'query' ? 'fileSearch' : 'query'))
+    setQuery('')
+    setSearchResults([])
+  }
+
   const handleQuerySubmit = async () => {
     if (!query || !selectedIndex) return
+
+    if (mode === 'fileSearch') {
+      // Call the new file search endpoint
+      const response = await fetch('http://localhost:5001/api/file-search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query,
+          indexName: selectedIndex,
+        }),
+      })
+
+      if (!response.ok) {
+        console.error('Failed to fetch file search results')
+        return
+      }
+
+      const data = await response.json()
+      setSearchResults(data)
+      return
+    }
 
     const newChatEntry = { query, response: '' }
     setConversation((prev) => [...prev, newChatEntry])
@@ -111,6 +144,8 @@ function App() {
       console.error('Error during query submission:', error)
     }
   }
+
+  console.log('previousResults:', previousResults)
 
   return (
     <>
@@ -179,6 +214,21 @@ function App() {
           }}
         />
         <button onClick={handleQuerySubmit}>Submit</button>
+        <button onClick={handleModeToggle}>
+          Toggle to {mode === 'query' ? 'File Search' : 'Query'}
+        </button>
+        {mode === 'fileSearch' && searchResults.length > 0 && (
+          <div className="search-results">
+            <h2>Search Results:</h2>
+            <ul>
+              {searchResults.map(({ filename, score }) => (
+                <li key={filename}>
+                  {filename} - Score: {score}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       <p className="read-the-docs">I do not seek, I find. </p>
