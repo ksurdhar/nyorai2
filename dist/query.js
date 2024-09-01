@@ -61,11 +61,32 @@ async function streamResponse(openai, chatHistory, debugMode, previousResults) {
     }
     return response.trim();
 }
-async function performRAGStream(query, indexName, chatHistory, previousResults, options) {
+// might need to handle case where relevant contexts is empty
+async function getSpecificFiles(indexName, pc, selectedFiles, previousResults) {
+    const filteredSelectedFiles = selectedFiles.filter((file) => !previousResults.has(file));
+    const index = pc.index(indexName);
+    const specificResults = await index.fetch(filteredSelectedFiles);
+    const specificFiles = Object.values(specificResults.records);
+    const relevantContexts = specificFiles.map((content) => content?.metadata?.text);
+    const filePaths = specificFiles.map((file) => file.metadata?.path);
+    filePaths.forEach((file) => {
+        previousResults.add(file);
+    });
+    return relevantContexts;
+}
+async function performRAGStream(query, indexName, chatHistory, previousResults, selectedFiles, options) {
     try {
         const { indexer: pc, embedder: openai } = options;
         const queryVector = await getQueryEmbedding(query, openai);
-        const relevantContexts = await getRelevantMatches(queryVector, indexName, pc, previousResults);
+        let relevantContexts = [];
+        if (selectedFiles.length > 0) {
+            console.log('using selected files');
+            relevantContexts = await getSpecificFiles(indexName, pc, selectedFiles, previousResults);
+        }
+        else {
+            console.log('no files selected, using query files');
+            relevantContexts = await getRelevantMatches(queryVector, indexName, pc, previousResults);
+        }
         await addQueryToHistory(query, relevantContexts, chatHistory);
         const readableStream = Readable.from(await openai.chat.completions.create({
             model: 'gpt-4o-mini',

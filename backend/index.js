@@ -51,7 +51,7 @@ app.get('/api/indexes', async (req, res) => {
 const chatHistories = new Map()
 
 app.post('/api/query', (req, res) => {
-  const { query, indexName, previousResults, userId } = req.body
+  const { query, indexName, previousResults, userId, selectedFiles } = req.body
   const streamId = uuidv4()
 
   const chatHistory = chatHistories.get(userId) || [
@@ -69,6 +69,7 @@ app.post('/api/query', (req, res) => {
     indexName,
     userId,
     previousResults: new Set(previousResults),
+    selectedFiles,
   })
 
   res.json({ streamId })
@@ -81,7 +82,8 @@ app.get('/api/query/stream/:streamId', async (req, res) => {
     return res.status(404).json({ error: 'Stream not found' })
   }
 
-  const { query, indexName, previousResults, userId } = streamState
+  const { query, indexName, previousResults, userId, selectedFiles } =
+    streamState
   const chatHistory = chatHistories.get(userId) || []
 
   console.log('chat history')
@@ -97,6 +99,7 @@ app.get('/api/query/stream/:streamId', async (req, res) => {
         indexName,
         chatHistory,
         new Set(previousResults),
+        selectedFiles,
         {
           indexer: pc,
           embedder: openai,

@@ -16,7 +16,7 @@ function App() {
   const [searchResults, setSearchResults] = useState<
     { filename: string; score: number }[]
   >([])
-
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
   const [previousResults, setPreviousResults] = useState<string[]>([])
   const [userId, setUserId] = useState<string | null>(null)
 
@@ -54,15 +54,12 @@ function App() {
 
   const handleModeToggle = () => {
     setMode((prev) => (prev === 'query' ? 'fileSearch' : 'query'))
-    setQuery('')
-    setSearchResults([])
   }
 
   const handleQuerySubmit = async () => {
     if (!query || !selectedIndex) return
 
     if (mode === 'fileSearch') {
-      // Call the new file search endpoint
       const response = await fetch('http://localhost:5001/api/file-search', {
         method: 'POST',
         headers: {
@@ -80,12 +77,25 @@ function App() {
       }
 
       const data = await response.json()
-      setSearchResults(data)
+
+      const newResults = data.filter(
+        (newResult: { filename: string }) =>
+          !searchResults.some(
+            (existingResult) => existingResult.filename === newResult.filename
+          )
+      )
+
+      setSearchResults([...searchResults, ...newResults]) // combine with previous results
       return
     }
 
     const newChatEntry = { query, response: '' }
     setConversation((prev) => [...prev, newChatEntry])
+
+    const selectedFileIds = searchResults
+      .filter(({ filename }) => selectedFiles.has(filename))
+      .map(({ filename }) => filename)
+    console.log('selectedFileIds:', selectedFileIds)
 
     try {
       const response = await fetch('http://localhost:5001/api/query', {
@@ -98,6 +108,7 @@ function App() {
           indexName: selectedIndex,
           userId,
           previousResults,
+          selectedFiles: selectedFileIds,
         }),
       })
 
@@ -223,7 +234,33 @@ function App() {
             <ul>
               {searchResults.map(({ filename, score }) => (
                 <li key={filename}>
+                  <input
+                    type="checkbox"
+                    checked={selectedFiles.has(filename)}
+                    onChange={() => {
+                      const newSelectedFiles = new Set(selectedFiles)
+                      if (newSelectedFiles.has(filename)) {
+                        newSelectedFiles.delete(filename)
+                      } else {
+                        newSelectedFiles.add(filename)
+                      }
+                      setSelectedFiles(newSelectedFiles)
+                    }}
+                  />
                   {filename} - Score: {score}
+                  <button
+                    onClick={() => {
+                      const newSelectedFiles = new Set(selectedFiles)
+                      newSelectedFiles.delete(filename)
+                      setSelectedFiles(newSelectedFiles)
+                      const newSearchResults = searchResults.filter(
+                        (result) => result.filename !== filename
+                      )
+                      setSearchResults(newSearchResults)
+                    }}
+                  >
+                    Delete
+                  </button>
                 </li>
               ))}
             </ul>

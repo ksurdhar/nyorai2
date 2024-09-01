@@ -107,23 +107,65 @@ async function streamResponse(
   return response.trim()
 }
 
+// might need to handle case where relevant contexts is empty
+async function getSpecificFiles(
+  indexName: string,
+  pc: Pinecone,
+  selectedFiles: string[],
+  previousResults: Set<string>
+) {
+  const filteredSelectedFiles = selectedFiles.filter(
+    (file) => !previousResults.has(file)
+  )
+
+  const index = pc.index(indexName)
+  const specificResults = await index.fetch(filteredSelectedFiles)
+
+  const specificFiles = Object.values(specificResults.records)
+  const relevantContexts = specificFiles.map(
+    (content) => content?.metadata?.text as string
+  )
+
+  const filePaths = specificFiles.map((file) => file.metadata?.path as string)
+  filePaths.forEach((file) => {
+    previousResults.add(file)
+  })
+
+  return relevantContexts
+}
+
 async function performRAGStream(
   query: string,
   indexName: string,
   chatHistory: any[],
   previousResults: Set<string>,
+  selectedFiles: string[],
   options: RAGOptions
 ) {
   try {
     const { indexer: pc, embedder: openai } = options
 
     const queryVector = await getQueryEmbedding(query, openai)
-    const relevantContexts = await getRelevantMatches(
-      queryVector,
-      indexName,
-      pc,
-      previousResults
-    )
+
+    let relevantContexts: string[] = []
+
+    if (selectedFiles.length > 0) {
+      console.log('using selected files')
+      relevantContexts = await getSpecificFiles(
+        indexName,
+        pc,
+        selectedFiles,
+        previousResults
+      )
+    } else {
+      console.log('no files selected, using query files')
+      relevantContexts = await getRelevantMatches(
+        queryVector,
+        indexName,
+        pc,
+        previousResults
+      )
+    }
 
     await addQueryToHistory(query, relevantContexts, chatHistory)
 
